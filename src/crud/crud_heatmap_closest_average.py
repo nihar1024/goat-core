@@ -1,6 +1,8 @@
 from typing import List
 from uuid import UUID
 
+from sqlalchemy import text
+
 from src.core.config import settings
 from src.core.job import job_init, job_log, run_background_or_immediately
 from src.crud.crud_heatmap import CRUDHeatmapBase
@@ -60,7 +62,7 @@ class CRUDHeatmapClosestAverage(CRUDHeatmapBase):
 
             # Create distributed point table using sql
             await self.async_session.execute(
-                f"""SELECT basic.create_heatmap_closest_average_opportunity_table(
+                text(f"""SELECT basic.create_heatmap_closest_average_opportunity_table(
                     {layer["layer"].opportunity_layer_project_id},
                     '{layer["table_name"]}',
                     '{settings.CUSTOMER_SCHEMA}',
@@ -75,7 +77,7 @@ class CRUDHeatmapClosestAverage(CRUDHeatmapBase):
                     {TRAVELTIME_MATRIX_RESOLUTION[routing_type]},
                     {layer["geom_type"] == FeatureGeometryType.polygon},
                     {append_to_existing}
-                )"""
+                )""")
             )
 
             await self.async_session.commit()
@@ -92,7 +94,7 @@ class CRUDHeatmapClosestAverage(CRUDHeatmapBase):
     ):
         """Builds SQL query to compute heatmap closest-average."""
 
-        query = f"""
+        query = text(f"""
             INSERT INTO {result_table} (layer_id, geom, text_attr1, float_attr1)
             WITH grouped AS (
                 SELECT dest_id, (ARRAY_AGG(traveltime ORDER BY traveltime))[1:num_destinations] AS traveltime
@@ -115,7 +117,7 @@ class CRUDHeatmapClosestAverage(CRUDHeatmapBase):
             FROM grouped
             JOIN LATERAL UNNEST(grouped.traveltime) traveltime(value) ON TRUE
             GROUP BY grouped.dest_id;
-        """
+        """)
 
         return query
 

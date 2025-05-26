@@ -23,8 +23,10 @@ from sqlmodel import (
     Text,
     text,
 )
-from ._base_class import DateTimeBase
+
 from src.core.config import settings
+
+from ._base_class import DateTimeBase
 
 if TYPE_CHECKING:
     from ._link_model import LayerProjectLink, ScenarioScenarioFeatureLink
@@ -53,49 +55,49 @@ def generate_field_definitions():
     for i in range(1, 26):
         field_definitions[f"integer_attr{i}"] = (
             int | None,
-            Field(sa_column=Column(Integer)),
+            Field(default=None, sa_column=Column(Integer)),
         )
         field_definitions[f"float_attr{i}"] = (
             float | None,
-            Field(sa_column=Column(Float)),
+            Field(default=None, sa_column=Column(Float)),
         )
         field_definitions[f"text_attr{i}"] = (
             str | None,
-            Field(sa_column=Column(Text)),
+            Field(default=None, sa_column=Column(Text)),
         )
 
     for i in range(1, 6):
         field_definitions[f"bigint_attr{i}"] = (
             int | None,
-            Field(sa_column=Column(BigInteger)),
+            Field(default=None, sa_column=Column(BigInteger)),
         )
 
     for i in range(1, 11):
         field_definitions[f"jsonb_attr{i}"] = (
             dict | None,
-            Field(sa_column=Column(JSONB)),
+            Field(default=None, sa_column=Column(JSONB)),
         )
         field_definitions[f"boolean_attr{i}"] = (
             bool | None,
-            Field(sa_column=Column(Boolean)),
+            Field(default=None, sa_column=Column(Boolean)),
         )
 
     for i in range(1, 4):
         field_definitions[f"arrint_attr{i}"] = (
             List[int] | None,
-            Field(sa_column=Column(ARRAY(Integer))),
+            Field(default=None, sa_column=Column(ARRAY(Integer))),
         )
         field_definitions[f"arrfloat_attr{i}"] = (
             List[float] | None,
-            Field(sa_column=Column(ARRAY(Float))),
+            Field(default=None, sa_column=Column(ARRAY(Float))),
         )
         field_definitions[f"arrtext_attr{i}"] = (
             List[str] | None,
-            Field(sa_column=Column(ARRAY(Text))),
+            Field(default=None, sa_column=Column(ARRAY(Text))),
         )
         field_definitions[f"timestamp_attr{i}"] = (
             datetime | None,
-            Field(sa_column=DateTime(timezone=False)),
+            Field(default=None, sa_column=DateTime(timezone=False)),
         )
 
     return field_definitions
@@ -111,6 +113,7 @@ class ScenarioFeature(DateTimeBase, UserData, table=True):
     __table_args__ = {"schema": settings.CUSTOMER_SCHEMA}
 
     id: UUID | None = Field(
+        default=None,
         sa_column=Column(
             UUID_PG(as_uuid=True),
             primary_key=True,
@@ -119,10 +122,12 @@ class ScenarioFeature(DateTimeBase, UserData, table=True):
         )
     )
     feature_id: UUID | None = Field(
+        default=None,
         sa_column=Column(UUID_PG(as_uuid=True), nullable=True),
         description="Feature ID of the modified feature",
     )
     layer_project_id: int | None = Field(
+        default=None,
         sa_column=Column(
             Integer,
             ForeignKey(
@@ -134,11 +139,13 @@ class ScenarioFeature(DateTimeBase, UserData, table=True):
     )
 
     h3_3: int | None = Field(
+        default=None,
         sa_column=Column(Integer, nullable=True),
         description="H3 resolution 3",
     )
 
     h3_6: int | None = Field(
+        default=None,
         sa_column=Column(Integer, nullable=True),
         description="H3 resolution 6",
     )

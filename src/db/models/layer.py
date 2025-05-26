@@ -1,15 +1,16 @@
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, List, Union
 from uuid import UUID
 
 import pycountry
 from geoalchemy2 import Geometry, WKBElement
 from geoalchemy2.shape import to_shape
-from pydantic import BaseModel, EmailStr, HttpUrl, validator
+from pydantic import BaseModel, EmailStr, HttpUrl, field_validator
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as UUID_PG
 from sqlmodel import (
+    ARRAY,
     Boolean,
     Column,
     Field,
@@ -180,19 +181,20 @@ class GeospatialAttributes(SQLModel):
     """Some general geospatial attributes."""
 
     extent: str | None = Field(
+        default=None,
         sa_column=Column(
-            Geometry(geometry_type="MultiPolygon", srid="4326", spatial_index=True),
+            Geometry("MultiPolygon", srid=4326, spatial_index=True),
             nullable=True,
         ),
-        description="Geographical Extent of the layer",
+        description="Geographical extent of the layer",
     )
 
-    @validator("extent", pre=True)
-    def wkt_to_geojson(cls, v):
-        if v and isinstance(v, WKBElement):
+    @field_validator("extent", mode="before")
+    @classmethod
+    def wkb_to_wkt(cls, v):
+        if isinstance(v, WKBElement):
             return to_shape(v).wkt
-        else:
-            return v
+        return v
 
 
 def validate_language_code(v):
@@ -231,21 +233,25 @@ class LayerBase(ContentBaseAttributes):
 
     # Data Quality Information
     lineage: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         max_length=500,
         description="Descriptive information about the source of the data and its derivation",
     )
     positional_accuracy: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         max_length=500,
         description="Quantitative value indicating positional accuracy",
     )
     attribute_accuracy: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         max_length=500,
         description="Quantitative value indicating the accuracy of attribute data",
     )
     completeness: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         max_length=500,
         description="Quantitative value indicating the completeness of the data",
@@ -253,63 +259,86 @@ class LayerBase(ContentBaseAttributes):
 
     # Distribution and Geographical Information
     geographical_code: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         max_length=13,  # ISO 3166-1 alpha-2 country codes are 2 letters
         description="Tag indicating the primary geographical area it is following the ISO 3166-1 alpha-2 standard for country codes and for continents the following values are used: Africa, Antarctica, Asia, Europe, North America, Oceania, South America, World",
     )
     language_code: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         max_length=2,  # ISO 639-1 language codes are 2 letters
         description="Language of the data",
     )
     distributor_name: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         max_length=500,
         description="Name of the entity distributing the data",
     )
     distributor_email: EmailStr | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="Contact information for the distributor",
     )
-    distribution_url: HttpUrl | None = Field(
+    distribution_url: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="URL to the data distribution",
     )
     license: DataLicense | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="License of the data",
     )
     attribution: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         max_length=500,
         description="Data source of the layer",
     )
     data_reference_year: int | None = Field(
+        default=None,
         sa_column=Column(Integer, nullable=True),
         description="Data reference year of the layer",
     )
     data_category: DataCategory | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="Data category of the layer",
     )
     in_catalog: bool | None = Field(
+        default=False,
         sa_column=Column(Boolean, nullable=False, server_default="False"),
         description="If the layer should be added in the catalog",
     )
-    thumbnail_url: HttpUrl | None = Field(
+    thumbnail_url: str | None = Field(
+        default=settings.DEFAULT_LAYER_THUMBNAIL,
         sa_column=Column(Text, nullable=True),
         description="Layer thumbnail URL",
-        default=settings.DEFAULT_LAYER_THUMBNAIL,
+    )
+    tags: List[str] | None = Field(
+        default=None,
+        sa_column=Column(ARRAY(Text), nullable=True), description="Layer tags"
     )
 
     # Check if language and geographical_tag valid according to pycountry
-    @validator("language_code", pre=True, check_fields=False)
-    def language_code_valid(cls, v):
-        return validate_language_code(v)
+    @field_validator("language_code", mode="after", check_fields=False)
+    def language_code_valid(cls, value: str) -> str:
+        return validate_language_code(value)
 
-    @validator("geographical_code", pre=True, check_fields=False)
-    def geographical_code_valid(cls, v):
-        return validate_geographical_code(v)
+    @field_validator("geographical_code", mode="after", check_fields=False)
+    def geographical_code_valid(cls, value: str) -> str:
+        return validate_geographical_code(value)
+
+    @field_validator("distribution_url", "thumbnail_url", mode="before")
+    def convert_httpurl_to_str(cls, value: str | HttpUrl | None) -> str | None:
+        if value is None:
+            return value
+        elif isinstance(value, HttpUrl):
+            return str(value)
+        assert HttpUrl(value)
+        return value
 
 
 layer_base_example = {
@@ -356,6 +385,7 @@ class Layer(LayerBase, GeospatialAttributes, DateTimeBase, table=True):
     __table_args__ = {"schema": settings.CUSTOMER_SCHEMA}
 
     id: UUID | None = Field(
+        default=None,
         sa_column=Column(
             UUID_PG(as_uuid=True),
             primary_key=True,
@@ -384,6 +414,7 @@ class Layer(LayerBase, GeospatialAttributes, DateTimeBase, table=True):
         sa_column=Column(Text, nullable=False), description="Layer type"
     )
     data_store_id: UUID | None = Field(
+        default=None,
         sa_column=Column(
             UUID_PG(as_uuid=True),
             ForeignKey(f"{settings.CUSTOMER_SCHEMA}.data_store.id"),
@@ -391,56 +422,69 @@ class Layer(LayerBase, GeospatialAttributes, DateTimeBase, table=True):
         description="Data store ID of the layer",
     )
     extent: str | None = Field(
+        default=None,
         sa_column=Column(
-            Geometry(geometry_type="MultiPolygon", srid="4326", spatial_index=False),
+            Geometry(geometry_type="MultiPolygon", srid=4326, spatial_index=False),
             nullable=True,
         ),
         description="Geographical Extent of the layer",
     )
     properties: dict | None = Field(
+        default=None,
         sa_column=Column(JSONB, nullable=True),
         description="Properties of the layer",
     )
     other_properties: dict | None = Field(
+        default=None,
         sa_column=Column(JSONB, nullable=True),
         description="Other properties of the layer",
     )
-    url: HttpUrl | None = Field(
+    url: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="Layer URL for vector and imagery layers",
     )
-    data_type: Optional[Union["RasterDataType", "FeatureDataType"]] = Field(
+    data_type: Union["RasterDataType", "FeatureDataType"] | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="Data type to store the source of the layer",
     )
-    tool_type: Optional[ToolType] = Field(
+    tool_type: ToolType | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="If it is an tool layer, the tool type",
     )
     job_id: UUID | None = Field(
+        default=None,
         sa_column=Column(UUID_PG(as_uuid=True), nullable=True),
         description="Job ID if the layer is a tool layer",
     )
-    feature_layer_type: Optional["FeatureType"] = Field(
+    feature_layer_type: FeatureType | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True), description="Feature layer type"
     )
     feature_layer_geometry_type: FeatureGeometryType | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="Geometry type for feature layers",
     )
     size: int | None = Field(
+        default=None,
         sa_column=Column(Integer, nullable=True),
         description="Size of the layer in bytes",
     )
     attribute_mapping: dict | None = Field(
+        default=None,
         sa_column=Column(JSONB, nullable=True),
         description="Attribute mapping for feature layers",
     )
     upload_reference_system: int | None = Field(
+        default=None,
         sa_column=Column(Integer, nullable=True),
         description="Description of the spatial reference systems",
     )
     upload_file_type: FileUploadType | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="Description of the upload file type",
     )
@@ -458,12 +502,21 @@ class Layer(LayerBase, GeospatialAttributes, DateTimeBase, table=True):
         back_populates="layer", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
-    @validator("extent", pre=True)
-    def wkt_to_geojson(cls, v):
-        if v and isinstance(v, WKBElement):
-            return to_shape(v).wkt
+    @field_validator("extent", mode="after")
+    def wkt_to_geojson(cls, value: str | WKBElement | None) -> str | None:
+        if value and isinstance(value, WKBElement):
+            return to_shape(value).wkt
         else:
-            return v
+            return value
+
+    @field_validator("url", "distribution_url", "thumbnail_url", mode="before")
+    def convert_httpurl_to_str(cls, value: str | HttpUrl | None) -> str | None:
+        if value is None:
+            return value
+        elif isinstance(value, HttpUrl):
+            return str(value)
+        assert HttpUrl(value)
+        return value
 
     @property
     def table_name(self):

@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from src.core.config import settings
 from src.core.job import job_init, job_log, run_background_or_immediately
@@ -36,7 +37,7 @@ class CRUDHeatmapConnectivity(CRUDToolBase):
 
         # Create distributed point table using sql
         await self.async_session.execute(
-            f"""SELECT basic.create_heatmap_connectivity_reference_area_table(
+            text(f"""SELECT basic.create_heatmap_connectivity_reference_area_table(
                 {layer_project.id},
                 '{layer_project.table_name}',
                 '{settings.CUSTOMER_SCHEMA}',
@@ -45,7 +46,7 @@ class CRUDHeatmapConnectivity(CRUDToolBase):
                 '{temp_points}',
                 {TRAVELTIME_MATRIX_RESOLUTION[routing_type]},
                 {False}
-            )"""
+            )""")
         )
         await self.async_session.commit()
 
@@ -62,7 +63,7 @@ class CRUDHeatmapConnectivity(CRUDToolBase):
 
         h3_cell_area = f"((3 * SQRT(3) / 2) * POWER(h3_get_hexagon_edge_length_avg({TRAVELTIME_MATRIX_RESOLUTION[params.routing_type]}, 'm'), 2))"
 
-        query = f"""
+        query = text(f"""
             INSERT INTO {result_table} (layer_id, geom, text_attr1, float_attr1)
             SELECT '{result_layer_id}', ST_SetSRID(h3_cell_to_boundary(matrix.orig_id)::geometry, 4326),
                 matrix.orig_id, SUM(ARRAY_LENGTH(matrix.dest_id, 1) * {h3_cell_area})
@@ -71,7 +72,7 @@ class CRUDHeatmapConnectivity(CRUDToolBase):
             AND matrix.orig_id = o.h3_index
             AND matrix.traveltime <= {params.max_traveltime}
             GROUP BY matrix.orig_id;
-        """
+        """)
         return query
 
     @job_log(job_step_name="heatmap_connectivity")

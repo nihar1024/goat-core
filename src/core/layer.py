@@ -748,7 +748,7 @@ class OGRFileHandling:
             f'"{self.file_path}" '
         )
         if layer_name:
-            cmd += f"{layer_name} "
+            cmd += f'"{layer_name}" '
         cmd += f'-nln {temp_table_name} -t_srs "EPSG:4326" -progress -dim XY {geometry_type} -unsetFieldWidth'
         try:
             # Run as async task

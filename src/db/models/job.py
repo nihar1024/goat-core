@@ -4,9 +4,11 @@ from uuid import UUID
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as UUID_PG
 from sqlmodel import ARRAY, Boolean, Column, Field, ForeignKey, Relationship, Text, text
-from src.schemas.job import JobStatusType, JobType
-from ._base_class import DateTimeBase
+
 from src.core.config import settings
+from src.schemas.job import JobStatusType, JobType
+
+from ._base_class import DateTimeBase
 
 if TYPE_CHECKING:
     from .user import User
@@ -19,6 +21,7 @@ class Job(DateTimeBase, table=True):
     __table_args__ = {"schema": settings.CUSTOMER_SCHEMA}
 
     id: UUID | None = Field(
+        default=None,
         sa_column=Column(
             UUID_PG(as_uuid=True),
             primary_key=True,
@@ -35,6 +38,7 @@ class Job(DateTimeBase, table=True):
         description="User ID of the user who created the job",
     )
     project_id: UUID | None = Field(
+        default=None,
         sa_column=Column(UUID_PG(as_uuid=True), nullable=True),
         description="Project ID of the project the job belongs to",
     )
@@ -42,6 +46,7 @@ class Job(DateTimeBase, table=True):
         sa_column=Column(Text, nullable=False), description="Type of the job"
     )
     layer_ids: List[UUID] | None = Field(
+        default=None,
         sa_column=Column(
             ARRAY(UUID_PG()),
             nullable=True,
@@ -57,13 +62,16 @@ class Job(DateTimeBase, table=True):
         description="Simple status of the job",
     )
     msg_simple: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True), description="Simple message of the job"
     )
     read: bool | None = Field(
+        default=False,
         sa_column=Column(Boolean, nullable=False, server_default="False"),
         description="Whether the user has marked the job as read",
     )
     payload: dict | None = Field(
+        default=None,
         sa_column=Column(JSONB, nullable=True), description="Payload of the job"
     )
 

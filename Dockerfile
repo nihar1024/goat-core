@@ -1,4 +1,4 @@
-FROM python:3.11.4-bookworm
+FROM python:3.11.12-bookworm
 # create directory for the app user
 RUN mkdir -p /app
 WORKDIR /app/

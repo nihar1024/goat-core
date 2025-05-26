@@ -82,7 +82,7 @@ async def create_project(
     # Create project
     return await crud_project.create(
         async_session=async_session,
-        project_in=Project(**project_in.dict(exclude_none=True), user_id=user_id),
+        project_in=Project(**project_in.model_dump(exclude_none=True), user_id=user_id),
         initial_view_state=project_in.initial_view_state,
     )
 
@@ -326,12 +326,7 @@ async def add_layers_to_project(
 
 @router.get(
     "/{project_id}/layer",
-    response_model=List[
-        IFeatureStandardProjectRead
-        | IFeatureToolProjectRead
-        | ITableProjectRead
-        | IRasterProjectRead
-    ],
+    response_model=list,
     response_model_exclude_none=True,
     status_code=200,
     dependencies=[Depends(auth_z)],
@@ -792,10 +787,10 @@ async def create_scenario(
     return await crud_scenario.create(
         db=async_session,
         obj_in=Scenario(
-            **scenario_in.dict(exclude_none=True),
+            **scenario_in.model_dump(exclude_none=True),
             user_id=user_id,
             project_id=project_id,
-        ),
+        ).model_dump(),
     )
 
 

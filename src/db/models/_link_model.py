@@ -34,9 +34,11 @@ class LayerProjectLink(DateTimeBase, table=True):
     __table_args__ = {"schema": settings.CUSTOMER_SCHEMA}
 
     id: int | None = Field(
+        default=None,
         sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     group: str | None = Field(
+        default=None,
         sa_column=Column(Text, nullable=True),
         description="Layer group name",
         max_length=255,
@@ -67,10 +69,12 @@ class LayerProjectLink(DateTimeBase, table=True):
         sa_column=Column(JSONB, nullable=True), description="Layer other properties"
     )
     query: dict | None = Field(
+        default=None,
         sa_column=Column(JSONB, nullable=True),
         description="CQL2-JSON filter to query the layer",
     )
     charts: dict | None = Field(
+        default=None,
         sa_column=Column(JSONB, nullable=True), description="Chart configuration"
     )
 
@@ -121,6 +125,7 @@ class UserProjectLink(DateTimeBase, table=True):
     __table_args__ = {"schema": settings.CUSTOMER_SCHEMA}
 
     id: int | None = Field(
+        default=None,
         sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     user_id: UUID = Field(

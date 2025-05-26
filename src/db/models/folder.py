@@ -5,16 +5,18 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID as UUID_PG
 from sqlmodel import Column, Field, Relationship, Text, UniqueConstraint, text
 
+from src.core.config import settings
 from src.db.models._base_class import DateTimeBase
 from src.db.models.layer import Layer
 from src.db.models.user import User
-from src.core.config import settings
+
 
 class Folder(DateTimeBase, table=True):
     __tablename__ = "folder"
     __table_args__ = {"schema": settings.CUSTOMER_SCHEMA}
 
     id: UUID | None = Field(
+        default=None,
         sa_column=Column(
             UUID_PG(as_uuid=True),
             primary_key=True,

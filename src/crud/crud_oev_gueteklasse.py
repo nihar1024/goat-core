@@ -3,6 +3,7 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from src.core.config import settings
 from src.core.job import job_init, job_log, run_background_or_immediately
@@ -46,7 +47,7 @@ class CRUDOevGueteklasse(CRUDToolBase):
 
         input_table = reference_layer_project.table_name
         where_query = build_where_clause([reference_layer_project.where_query])
-        query = f"""
+        query = text(f"""
             INSERT INTO {self.table_stations}({', '.join(station_category_layer.attribute_mapping.keys())}, layer_id, geom)
             WITH child_stops AS (
                 SELECT *
@@ -88,7 +89,7 @@ class CRUDOevGueteklasse(CRUDToolBase):
             )
             SELECT *
             FROM stations;
-        """
+        """)
         await self.async_session.execute(query, {"where_query": where_query})
         await self.async_session.commit()
         return {
@@ -101,7 +102,7 @@ class CRUDOevGueteklasse(CRUDToolBase):
     ):
         # Create difference between different buffers*
         await self.async_session.execute(
-            f"""
+            text(f"""
             INSERT INTO {self.table_oev_gueteklasse} (text_attr1, integer_attr1, layer_id, geom)
             SELECT UPPER(CHR(a.pt_class + 96))::text, a.pt_class, '{layer_id}', CASE WHEN j.geom IS NULL THEN a.geom ELSE j.geom END AS geom
             FROM {temp_table_name} a
@@ -115,7 +116,7 @@ class CRUDOevGueteklasse(CRUDToolBase):
                     AND ST_Intersects(a.geom, b.geom)
                 ) c
             ) j ON TRUE;
-            """
+            """)
         )
 
     @job_log(job_step_name="station_buffer")
@@ -134,10 +135,10 @@ class CRUDOevGueteklasse(CRUDToolBase):
 
         # Create temp distributed table for buffered stations
         await self.async_session.execute(
-            f"DROP TABLE IF EXISTS {temp_buffered_stations};"
+            text(f"DROP TABLE IF EXISTS {temp_buffered_stations};")
         )
         await self.async_session.execute(
-            f"""
+            text(f"""
             CREATE TABLE {temp_buffered_stations}
             (
                 stop_id TEXT,
@@ -146,31 +147,31 @@ class CRUDOevGueteklasse(CRUDToolBase):
                 geom geometry,
                 h3_3 integer
             )
-        """
+        """)
         )
         await self.async_session.execute(
-            f"SELECT create_distributed_table('{temp_buffered_stations}', 'h3_3')"
+            text(f"SELECT create_distributed_table('{temp_buffered_stations}', 'h3_3')")
         )
 
         # Buffer the stations in their respective intervals
         await self.async_session.execute(
-            f"""INSERT INTO {temp_buffered_stations}
+            text(f"""INSERT INTO {temp_buffered_stations}
             SELECT text_attr1 AS stop_id,  REPLACE(j.value::TEXT, '"', '')::integer AS pt_class,
             j.KEY::integer distance, ST_BUFFER(s.geom::geography, j.KEY::integer)::geometry AS geom,
             basic.to_short_h3_3(h3_lat_lng_to_cell(geom::point, 3)::bigint)
             FROM {self.table_stations} s
             , LATERAL jsonb_each('{json.dumps(station_config)}'::jsonb -> 'classification' -> s.integer_attr1::text) j
             WHERE layer_id = '{station_category_layer.id}';
-            """
+            """)
         )
         await self.async_session.execute(
-            f"""CREATE INDEX ON {temp_buffered_stations} USING GIST(h3_3, geom);"""
+            text(f"""CREATE INDEX ON {temp_buffered_stations} USING GIST(h3_3, geom);""")
         )
 
         # Union the buffers. It is not made use of citus distribution column here as it is a challenge to group over shards efficiently.
-        await self.async_session.execute(f"DROP TABLE IF EXISTS {temp_union_buffer};")
+        await self.async_session.execute(text(f"DROP TABLE IF EXISTS {temp_union_buffer};"))
         await self.async_session.execute(
-            f"""CREATE TABLE {temp_union_buffer} AS
+            text(f"""CREATE TABLE {temp_union_buffer} AS
             WITH clustered_buffer AS
             (
                 SELECT s.geom, s.pt_class,
@@ -184,10 +185,10 @@ class CRUDOevGueteklasse(CRUDToolBase):
             SELECT b.pt_class, ST_UNION(b.geom) AS geom
             FROM clustered_buffer b
             WHERE cluster_id IS NOT NULL
-            GROUP BY b.pt_class, cluster_id;"""
+            GROUP BY b.pt_class, cluster_id;""")
         )
         await self.async_session.execute(
-            f"""CREATE INDEX ON {temp_union_buffer} USING GIST(geom);"""
+            text(f"""CREATE INDEX ON {temp_union_buffer} USING GIST(geom);""")
         )
         # Create difference between different buffers*
         await self.create_difference_between_steps(
@@ -215,16 +216,16 @@ class CRUDOevGueteklasse(CRUDToolBase):
         table_suffix = str(self.job_id).replace("-", "")
         temp_catchment_stations = f"temporal.temp_catchment_stations_{table_suffix}"
         temp_union_catchment = f"temporal.temp_union_catchment_{table_suffix}"
-        sql_create_temp_catchment_stations = f"""
+        sql_create_temp_catchment_stations = text(f"""
             CREATE TABLE {temp_catchment_stations}
             (
                 pt_class integer,
                 distance integer,
                 geom geometry
             );
-        """
+        """)
         await self.async_session.execute(
-            f"DROP TABLE IF EXISTS {temp_catchment_stations};"
+            text(f"DROP TABLE IF EXISTS {temp_catchment_stations};")
         )
         await self.async_session.execute(sql_create_temp_catchment_stations)
 
@@ -240,12 +241,12 @@ class CRUDOevGueteklasse(CRUDToolBase):
             max_distance = max(int(key) for key in classification.keys())
 
             # Get lats and lons from self.table_stations
-            query = f"""
+            query = text(f"""
                 SELECT ARRAY_AGG(ST_X(geom)) AS lons, ARRAY_AGG(ST_Y(geom)) AS lats
                 FROM {self.table_stations}
                 WHERE layer_id = '{station_category_layer.id}'
                 AND integer_attr1 = {pt_class};
-            """
+            """)
             starting_points = await self.async_session.execute(query)
             starting_points = starting_points.fetchall()
 
@@ -281,23 +282,23 @@ class CRUDOevGueteklasse(CRUDToolBase):
 
                 # Insert into temp_catchment_stations
                 await self.async_session.execute(
-                    f"""
+                    text(f"""
                     INSERT INTO {temp_catchment_stations}
                     SELECT ('{json.dumps(classification)}'::jsonb ->> integer_attr1::TEXT)::integer, integer_attr1 AS distance, geom
                     FROM {temp_batch_catchment_table}
                     WHERE '{json.dumps(classification)}'::jsonb ->> integer_attr1::TEXT IS NOT NULL
-                    """
+                    """)
                 )
 
                 await self.async_session.commit()
 
         # Union the catchments by pt_class and isnert into user table
-        sql_union = f"""
+        sql_union = text(f"""
             CREATE TABLE {temp_union_catchment} AS
             SELECT a.pt_class, '{catchment_layer.id}', ST_UNION(a.geom) AS geom
             FROM {temp_catchment_stations} a
             GROUP BY a.pt_class;
-        """
+        """)
         await self.async_session.execute(sql_union)
         await self.async_session.commit()
 

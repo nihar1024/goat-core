@@ -4,7 +4,7 @@ from uuid import UUID
 
 # Third party imports
 from fastapi import HTTPException, status
-from pydantic import BaseModel, ValidationError, parse_obj_as
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import SQLModel
@@ -81,7 +81,7 @@ class CRUDLayerProject(CRUDLayerBase, StatisticsBase):
         """Get all layers from a project"""
 
         # Get all layers from project
-        query = select([Layer, LayerProjectLink]).where(
+        query = select(Layer, LayerProjectLink).where(
             LayerProjectLink.project_id == project_id,
             Layer.id == LayerProjectLink.layer_id,
         )
@@ -96,12 +96,13 @@ class CRUDLayerProject(CRUDLayerBase, StatisticsBase):
         )
         return layer_projects_to_schemas
 
-    async def get_by_ids(self, async_session: AsyncSession, ids: [int]):
+    async def get_by_ids(self, async_session: AsyncSession, ids: list[int]):
         """Get all layer projects links by the ids"""
 
         # Get all layers from project by id
-        query = select([Layer, LayerProjectLink]).where(
+        query = select(Layer, LayerProjectLink).where(
             LayerProjectLink.id.in_(ids),
+        ).where(
             Layer.id == LayerProjectLink.layer_id,
         )
 
@@ -123,12 +124,12 @@ class CRUDLayerProject(CRUDLayerBase, StatisticsBase):
         expected_layer_types: List[Union[LayerType.feature, LayerType.table]] = [
             LayerType.feature
         ],
-        expected_geometry_types: List[FeatureGeometryType] = None,
+        expected_geometry_types: List[FeatureGeometryType] | None = None,
     ):
         """Get internal layer from layer project"""
 
         # Get layer project
-        query = select([Layer, LayerProjectLink]).where(
+        query = select(Layer, LayerProjectLink).where(
             LayerProjectLink.id == id,
             Layer.id == LayerProjectLink.layer_id,
             LayerProjectLink.project_id == project_id,
@@ -229,7 +230,7 @@ class CRUDLayerProject(CRUDLayerBase, StatisticsBase):
             # Add to database
             layer_project = await CRUDBase(LayerProjectLink).create(
                 async_session,
-                obj_in=layer_project,
+                obj_in=layer_project.model_dump(),
             )
             layer_project_ids.append(layer_project.id)
 
@@ -284,7 +285,7 @@ class CRUDLayerProject(CRUDLayerBase, StatisticsBase):
 
         # Parse and validate the data against the model
         try:
-            layer_in = parse_obj_as(model_type_update, layer_in)
+            layer_in = TypeAdapter(model_type_update).validate_python(layer_in)
         except ValidationError as e:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -303,7 +304,7 @@ class CRUDLayerProject(CRUDLayerBase, StatisticsBase):
             obj_in=layer_in,
         )
         layer_project_dict = layer_project.dict()
-        del layer_project_dict["id"]
+        del layer_dict["id"]
         # Update layer
         layer_dict.update(layer_project_dict)
         layer_project = model_type_read(**layer_dict)

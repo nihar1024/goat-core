@@ -5,7 +5,6 @@ from pydantic import BaseModel, Extra
 from src.db.models.scenario_feature import (
     ScenarioFeatureEditType,
 )
-from src.utils import optional
 
 
 class IScenarioCreate(BaseModel):
@@ -22,17 +21,18 @@ class IScenarioFeatureCreate(BaseModel):
     geom: str
 
     class Config:
-        extra = Extra.allow
+        model_config = {
+            "extra": "allow"
+        }
 
 
-@optional
 class IScenarioFeatureUpdate(BaseModel):
     id: UUID
-    feature_id: UUID
+    feature_id: UUID | None = None
     edit_type: ScenarioFeatureEditType
     layer_project_id: int
-    h3_3: int | None
-    geom: str
+    h3_3: int | None = None
+    geom: str | None = None
 
     class Config:
         extra = Extra.allow

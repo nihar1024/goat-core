@@ -1,11 +1,12 @@
 from uuid import UUID
 from pydantic import Field
-from src.db.models.system_setting import SystemSetting, SystemSettingBase
+from src.db.models.system_setting import SystemSettingBase, ClientThemeType, LanguageType, UnitType
 from src.utils import optional
 
 
-class SystemSettingsRead(SystemSetting):
-    pass
+class SystemSettingsRead(SystemSettingBase):
+    id: UUID
+    user_id: UUID
 
 
 @optional
@@ -18,9 +19,9 @@ class SystemSettingsCreate(SystemSettingBase):
 
 
 default_system_settings = SystemSettingsCreate(
-    client_theme="dark",
-    preferred_language="de",
-    unit="metric",
+    client_theme=ClientThemeType.dark,
+    preferred_language=LanguageType.de,
+    unit=UnitType.metric,
 )
 
 # Body of request examples

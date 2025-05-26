@@ -2,6 +2,7 @@ import asyncio
 from uuid import UUID
 
 from httpx import AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -77,18 +78,18 @@ async def create_temp_isochrone_table(async_session: AsyncSession, job_id: UUID)
         # Create result table to store catchment area geometry
         catchment_area_table = f"temporal.temp_{str(job_id).replace('-', '')}"
         # Drop table if exists
-        sql_drop_temp_table = f"""
+        sql_drop_temp_table = text(f"""
             DROP TABLE IF EXISTS {catchment_area_table};
-        """
+        """)
         await async_session.execute(sql_drop_temp_table)
-        sql_create_temp_table = f"""
+        sql_create_temp_table = text(f"""
             CREATE TABLE {catchment_area_table} (
                 id serial,
                 layer_id text,
                 geom geometry,
                 integer_attr1 smallint
             );
-        """
+        """)
         await async_session.execute(sql_create_temp_table)
         await async_session.commit()
     except Exception as e:
@@ -130,7 +131,7 @@ class CRUDCatchmentAreaBase(CRUDToolBase):
             # Create insert query
             lats = params.starting_points.latitude[i : i + 500]
             lons = params.starting_points.longitude[i : i + 500]
-            sql = f"""
+            sql = text(f"""
                 WITH to_test AS
                 (
                     SELECT ST_SETSRID(ST_MAKEPOINT(lon[gs], lat[gs]), 4326) AS geom
@@ -144,7 +145,7 @@ class CRUDCatchmentAreaBase(CRUDToolBase):
                     FROM {params.geofence_table} AS g
                     WHERE ST_INTERSECTS(t.geom, g.geom)
                 )
-            """
+            """)
             # Execute query
             cnt_not_intersecting = await self.async_session.execute(sql)
             cnt_not_intersecting = cnt_not_intersecting.scalars().first()
@@ -159,12 +160,12 @@ class CRUDCatchmentAreaBase(CRUDToolBase):
             # Create insert query
             lats = params.starting_points.latitude[i : i + 500]
             lons = params.starting_points.longitude[i : i + 500]
-            sql = f"""
+            sql = text(f"""
                 INSERT INTO {self.table_starting_points} (layer_id, geom)
                 SELECT '{layer.id}', ST_SETSRID(ST_MAKEPOINT(lon[gs], lat[gs]), 4326) AS geom
                 FROM generate_series(1, array_length(ARRAY{str(lats)}, 1)) AS gs,
                 LATERAL (SELECT ARRAY{str(lats)} AS lat, ARRAY{str(lons)} AS lon) AS arrays
-            """
+            """)
             # Execute query
             await self.async_session.execute(sql)
 
@@ -198,7 +199,7 @@ class CRUDCatchmentAreaBase(CRUDToolBase):
             if params.starting_points.layer_project_id is None
             else f"{params.starting_points.layer_project_id}"
         )
-        sql = f"""
+        sql = text(f"""
             SELECT ST_X(geom) AS lon, ST_Y(geom) AS lat
             FROM (
                 WITH scenario_features AS (
@@ -217,8 +218,8 @@ class CRUDCatchmentAreaBase(CRUDToolBase):
                     FROM scenario_features
                     WHERE edit_type IN ('n', 'm')
             ) input_features;
-        """
-        starting_points = (await self.async_session.execute(sql)).fetchall()
+        """)
+        starting_points = (await self.async_session.execute(sql)).mappings().fetchall()
         starting_points = [dict(x) for x in starting_points]
         lats = [x["lat"] for x in starting_points]
         lons = [x["lon"] for x in starting_points]
@@ -386,10 +387,10 @@ class CRUDCatchmentAreaPT(CRUDCatchmentAreaBase):
             insert_string = ""
             for shape in shapes_sorted:
                 insert_string += f"('{layer_id}', ST_MakeValid(ST_SetSRID(ST_GeomFromText('{shape[0]}'), 4326)), {shape[1]}),"
-            insert_string = f"""
+            insert_string = text(f"""
                 INSERT INTO {result_table} (layer_id, geom, integer_attr1)
                 VALUES {insert_string.rstrip(",")};
-            """
+            """)
             await self.async_session.execute(insert_string)
         else:
             # Save catchment area grid data
@@ -426,7 +427,7 @@ class CRUDCatchmentAreaPT(CRUDCatchmentAreaBase):
         # Compute catchment area for each starting point
         for i in range(0, len(lats)):
             # Identify relevant R5 region & bundle for this catchment area starting point
-            sql_get_region_mapping = f"""
+            sql_get_region_mapping = text(f"""
                 SELECT r5_region_id, r5_bundle_id, r5_host
                 FROM {settings.REGION_MAPPING_PT_TABLE}
                 WHERE ST_INTERSECTS(
@@ -439,14 +440,14 @@ class CRUDCatchmentAreaPT(CRUDCatchmentAreaBase):
                     ),
                     ST_SetSRID(geom, 4326)
                 );
-            """
+            """)
             r5_region_id, r5_bundle_id, r5_host = (
                 await self.async_session.execute(sql_get_region_mapping)
             ).fetchall()[0]
 
             # Get relevant region bounds for this starting point
             # TODO Compute buffer distance dynamically?
-            sql_get_region_bounds = f"""
+            sql_get_region_bounds = text(f"""
                 SELECT ST_XMin(b.geom), ST_YMin(b.geom), ST_XMax(b.geom), ST_YMax(b.geom)
                 FROM (
                     SELECT ST_Envelope(
@@ -461,7 +462,7 @@ class CRUDCatchmentAreaPT(CRUDCatchmentAreaBase):
                         )::geometry
                     ) AS geom
                 ) b;
-            """
+            """)
             xmin, ymin, xmax, ymax = (
                 await self.async_session.execute(sql_get_region_bounds)
             ).fetchall()[0]

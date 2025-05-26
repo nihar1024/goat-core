@@ -1,10 +1,17 @@
 # Standard library imports
 from enum import Enum
-from typing import List, Optional
+from typing import Annotated, List, Literal, Optional, Union
 from uuid import UUID, uuid4
 
 # Third party imports
-from pydantic import BaseModel, Field, HttpUrl, ValidationError, validator
+from pydantic import (
+    BaseModel,
+    Field,
+    HttpUrl,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+)
 from pyproj import CRS
 from pyproj.exceptions import CRSError
 from shapely import wkt
@@ -126,9 +133,8 @@ class UserDataTable(str, Enum):
 
 
 class LayerReadBaseAttributes(BaseModel):
-    id: UUID = Field(..., description="Content ID of the layer", alias="id")
+    id: UUID = Field(..., description="Content ID of the layer")
     user_id: UUID = Field(..., description="User ID of the owner")
-    type: LayerType = Field(..., description="Layer type")
     shared_with: dict | None = Field(
         None, description="List of user IDs the layer is shared with"
     )
@@ -150,26 +156,80 @@ class LayerProperties(BaseModel):
 class ExternalServiceOtherProperties(BaseModel):
     """Model for external service properties."""
 
-    url: Optional[HttpUrl] = Field(None, description="Layer URL")
-    layers: Optional[List[str]] = Field(
-        None, description="List of layers to be displayed"
+    url: str | None = Field(
+        default=None,
+        description="Layer URL",
     )
-    width: Optional[int] = Field(None, description="Width of the WMS image")
-    height: Optional[int] = Field(None, description="Height of the WMS image")
-    srs: Optional[str] = Field(None, description="SRS of the WMS image", max_length=50)
-    legend_urls: Optional[List[HttpUrl]] = Field(None, description="Layer legend URLs")
+    layers: List[str] | None = Field(
+        default=None,
+        description="List of layers to be displayed",
+    )
+    width: int | None = Field(
+        default=None,
+        description="Width of the WMS image",
+    )
+    height: int | None = Field(
+        default=None,
+        description="Height of the WMS image",
+    )
+    srs: str | None = Field(
+        default=None,
+        description="SRS of the WMS image",
+        max_length=50,
+    )
+    legend_urls: List[str] | None = Field(
+        default=None,
+        description="Layer legend URLs",
+    )
+
+    @field_validator("url", mode="before")
+    def convert_url_httpurl_to_str(cls, value: str | HttpUrl | None) -> str | None:
+        if value is None:
+            return value
+        elif isinstance(value, HttpUrl):
+            return str(value)
+        assert HttpUrl(value)
+        return value
+
+    @field_validator("legend_urls", mode="before")
+    def convert_legend_urls_httpurl_to_str(cls, value: list[str] | list[HttpUrl] | None) -> list[str] | None:
+        if value is None:
+            return value
+
+        result = []
+        for v in value:
+            if isinstance(v, HttpUrl):
+                result.append(str(v))
+            else:
+                assert HttpUrl(v)
+                result.append(v)
+        return result
 
 
 class ExternalServiceAttributesBase(BaseModel):
     """Base model for attributes pertaining to an external service."""
 
-    url: Optional[HttpUrl] = Field(None, description="Layer URL")
-    data_type: Optional[FeatureDataType | RasterDataType] = Field(
-        None, description="Content data type"
+    url: str | None = Field(
+        default=None,
+        description="Layer URL",
     )
-    other_properties: Optional[ExternalServiceOtherProperties] = Field(
-        None, description="Additional layer properties."
+    data_type: FeatureDataType | RasterDataType | None = Field(
+        default=None,
+        description="Content data type",
     )
+    other_properties: ExternalServiceOtherProperties | None = Field(
+        default=None,
+        description="Additional layer properties.",
+    )
+
+    @field_validator("url", mode="before")
+    def convert_httpurl_to_str(cls, value: str | HttpUrl | None) -> str | None:
+        if value is None:
+            return value
+        elif isinstance(value, HttpUrl):
+            return str(value)
+        assert HttpUrl(value)
+        return value
 
 
 ################################################################################
@@ -205,7 +265,6 @@ class FeatureReadBaseAttributes(
 ):
     """Base model for feature layer reads."""
 
-    feature_layer_type: "FeatureType" = Field(..., description="Feature layer type")
     feature_layer_geometry_type: "FeatureGeometryType" = Field(
         ..., description="Feature layer geometry type"
     )
@@ -237,10 +296,18 @@ feature_layer_update_base_example = {
 # Feature Layer Standard
 class ILayerFromDatasetCreate(LayerBase, ExternalServiceAttributesBase):
     id: UUID = Field(
-        default_factory=uuid4, description="Content ID of the layer", alias="id"
+        default_factory=uuid4,
+        description="Content ID of the layer",
+        alias="id",
     )
-    dataset_id: UUID = Field(..., description="Dataset ID")
-    properties: Optional[dict] = Field(None, description="Layer properties.")
+    dataset_id: UUID = Field(
+        ...,
+        description="Dataset ID",
+    )
+    properties: Optional[dict] = Field(
+        default=None,
+        description="Layer properties.",
+    )
 
 
 class IFeatureLayerToolCreate(BaseModel):
@@ -274,7 +341,9 @@ class IFeatureStandardCreateAdditionalAttributes(BaseModel):
 class IFeatureStandardRead(
     FeatureReadBaseAttributes, DateTimeBase, ExternalServiceAttributesBase
 ):
-    pass
+
+    type: Literal["feature"]
+    feature_layer_type: Literal["standard"]
 
 
 @optional
@@ -305,6 +374,8 @@ class IFeatureToolRead(
 ):
     """Model to read a feature layer tool."""
 
+    type: Literal["feature"]
+    feature_layer_type: Literal["tool"]
     charts: dict | None = Field(None, description="Chart configuration")
 
 
@@ -315,10 +386,11 @@ class IFeatureToolUpdate(FeatureUpdateBase):
     pass
 
 
-class IFeatureStreetNetworkRead(IFeatureStandardRead):
+class IFeatureStreetNetworkRead(FeatureReadBaseAttributes, DateTimeBase):
     """Model to read a street network feature layer."""
 
-    pass
+    type: Literal["feature"]
+    feature_layer_type: Literal["street_network"]
 
 
 class IFeatureStreetNetworkUpdate(IFeatureStandardUpdate):
@@ -379,18 +451,27 @@ class IRasterRead(
 ):
     """Model to read a raster layer."""
 
-    pass
+    type: Literal["raster"]
 
 
 @optional
 class IRasterUpdate(LayerBase, GeospatialAttributes):
     """Model to update a raster layer."""
 
-    url: HttpUrl | None = Field(None, description="Layer URL")
+    url: str | None = Field(None, description="Layer URL")
     properties: dict | None = Field(None, description="Layer properties.")
     other_properties: ExternalServiceOtherProperties | None = Field(
         None, description="Additional layer properties."
     )
+
+    @field_validator("url", mode="before")
+    def convert_httpurl_to_str(cls, value: str | HttpUrl | None) -> str | None:
+        if value is None:
+            return value
+        elif isinstance(value, HttpUrl):
+            return str(value)
+        assert HttpUrl(value)
+        return value
 
 
 imagery_layer_update_base_example = {
@@ -427,6 +508,7 @@ class ITableRead(
 ):
     """Model to read a table layer."""
 
+    type: Literal["table"]
     attribute_mapping: dict = Field(..., description="Attribute mapping of the layer")
 
 
@@ -489,7 +571,7 @@ layer_update_class = {
 
 # Write function to get the correct class
 def get_layer_schema(
-    class_mapping: dict, layer_type: LayerType, feature_layer_type: FeatureType = None
+    class_mapping: dict, layer_type: LayerType, feature_layer_type: FeatureType | None = None
 ):
     # Check if layer type is valid
     if layer_type in class_mapping:
@@ -502,44 +584,20 @@ def get_layer_schema(
         raise ValueError(f"Layer type ({layer_type}) is invalid")
 
 
-class ILayerExternalCreate(BaseModel):
-    def __new__(cls, *args, **kwargs):
-        layer_create_class = get_layer_class(
-            "create", layer_creator_class["external"], **kwargs
-        )
-        return layer_create_class(**kwargs)
+FeatureLayer = Annotated[
+    Union[
+        IFeatureStandardRead,
+        IFeatureToolRead,
+        IFeatureStreetNetworkRead,
+    ],
+    Field(discriminator="feature_layer_type"),
+]
 
 
-class ILayerRead(BaseModel):
-    def __new__(cls, *args, **kwargs):
-        layer_read_class = get_layer_class(
-            "read",
-            layer_creator_class,
-            **kwargs,
-        )
-        return layer_read_class(**kwargs)
-
-
-class ILayerReadShared(BaseModel):
-    def __new__(cls, *args, **kwargs):
-        layer = kwargs["layer"]
-        shared_with = kwargs.get("shared_with", None)
-        layer_read_class = get_layer_class(
-            "read",
-            layer_creator_class,
-            **layer,
-        )
-        return layer_read_class(**layer, shared_with=shared_with)
-
-
-class ILayerUpdate(BaseModel):
-    def __new__(cls, *args, **kwargs):
-        layer_update_class = get_layer_class(
-            "update",
-            layer_creator_class,
-            **kwargs,
-        )
-        return layer_update_class(**kwargs)
+ILayerRead = Annotated[
+    Union[FeatureLayer, ITableRead, IRasterRead],
+    Field(discriminator="type"),
+]
 
 
 class IUniqueValue(BaseModel):
@@ -547,6 +605,12 @@ class IUniqueValue(BaseModel):
 
     value: str = Field(..., description="Unique value")
     count: int = Field(..., description="Number of occurrences")
+
+    @field_validator("value", mode="before")
+    def convert_value_to_str(cls, value: str | int) -> str:
+        if isinstance(value, str):
+            return value
+        return str(value)
 
 
 class IValidateJobId(BaseModel):
@@ -570,22 +634,22 @@ class ILayerExport(CQLQuery):
     )
 
     # Check if crs is valid
-    @validator("crs")
-    def validate_crs(cls, crs):
+    @field_validator("crs")
+    def validate_crs(cls, value: str | None):
         # Validate the provided CRS
         try:
-            CRS(crs)
+            CRS(value)
         except CRSError as e:
             raise ValidationError(f"Invalid CRS: {e}")
-        return crs
+        return value
 
     # Check that projection is EPSG:4326 for KML
-    @validator("crs")
-    def validate_crs_kml(cls, crs, values):
-        if values["file_type"] == FeatureLayerExportType.kml:
-            if crs != "EPSG:4326":
+    @field_validator("crs")
+    def validate_crs_kml(cls, value: str | None, info: ValidationInfo):
+        if info.data["file_type"] == FeatureLayerExportType.kml:
+            if value != "EPSG:4326":
                 raise ValidationError("KML export only supports EPSG:4326 projection.")
-        return crs
+        return value
 
 
 class LayerGetBase(BaseModel):
@@ -622,35 +686,34 @@ class LayerGetBase(BaseModel):
         None, description="List of distributor names"
     )
     spatial_search: str | None = Field(None, description="Spatial search for the layer")
-    in_catalog: bool = Field(
+    in_catalog: Literal[True] = Field(
         True,
-        const=True,
         description="This field is always true. Only layers that are in the catalog will be returned.",
     )
 
-    @validator("language_code", pre=True, check_fields=False)
-    def language_code_valid(cls, language_code):
-        if language_code:
-            for code in language_code:
+    @field_validator("language_code", mode="after", check_fields=False)
+    def language_code_valid(cls, value: list[str]) -> list[str]:
+        if value:
+            for code in value:
                 validate_language_code(code)
-        return language_code
+        return value
 
-    @validator("geographical_code", pre=True, check_fields=False)
-    def geographical_code_valid(cls, geographical_code):
-        if geographical_code:
-            for code in geographical_code:
+    @field_validator("geographical_code", mode="after", check_fields=False)
+    def geographical_code_valid(cls, value: list[str]) -> list[str]:
+        if value:
+            for code in value:
                 validate_geographical_code(code)
-        return geographical_code
+        return value
 
     # Validate the spatial search
-    @validator("spatial_search")
-    def validate_spatial_search(cls, spatial_search):
-        if spatial_search:
+    @field_validator("spatial_search")
+    def validate_spatial_search(cls, value):
+        if value:
             try:
-                wkt.loads(spatial_search)
+                wkt.loads(value)
             except Exception as e:
                 raise ValidationError(f"Invalid Geometry: {e}")
-        return spatial_search
+        return value
 
 
 class ILayerGet(LayerGetBase):
@@ -661,9 +724,8 @@ class ILayerGet(LayerGetBase):
 
 
 class ICatalogLayerGet(LayerGetBase):
-    in_catalog: bool = Field(
+    in_catalog: Literal[True] = Field(
         True,
-        const=True,
         description="This field is always true. Only layers that are in the catalog will be returned.",
     )
 

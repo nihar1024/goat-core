@@ -284,7 +284,7 @@ async def create_layer_raster(
     """Create a new raster layer from a service hosted externally."""
 
     layer_in = Layer(**layer_in.dict(), user_id=user_id)
-    layer = await crud_layer.create(db=async_session, obj_in=layer_in)
+    layer = await crud_layer.create(db=async_session, obj_in=layer_in.model_dump())
     return layer
 
 

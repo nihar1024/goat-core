@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List
 
-from pydantic import UUID4, BaseModel, Field, ValidationError, validator
+from pydantic import UUID4, BaseModel, Field, field_validator
 from pygeofilter.parsers.cql2_json import parse as cql2_json_parser
 
 
@@ -37,15 +37,15 @@ class CQLQueryObject(BaseModel):
     cql: dict | None = Field(None, description="CQL query")
 
     # Validate using cql2_json_parser(query)
-    @validator("cql")
-    def validate_query(cls, v):
-        if v is None:
-            return v
+    @field_validator("cql")
+    def validate_query(cls, value: dict | None) -> dict | None:
+        if value is None:
+            return value
         try:
-            cql2_json_parser(v)
+            cql2_json_parser(value)
         except Exception as e:
-            raise ValidationError(f"Invalid CQL query: {e}")
-        return v
+            raise ValueError(f"Invalid CQL query: {e}")
+        return value
 
 
 class CQLQuery(BaseModel):

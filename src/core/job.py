@@ -399,7 +399,7 @@ class CRUDFailedJob:
         # Delete all tables
         for table in tables:
             await self.async_session.execute(
-                f"DROP TABLE IF EXISTS temporal.{table[0]} CASCADE;"
+                text(f"DROP TABLE IF EXISTS temporal.{table[0]} CASCADE;")
             )
         await self.async_session.commit()
 

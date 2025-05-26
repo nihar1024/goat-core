@@ -1,5 +1,5 @@
 import contextlib
-from typing import AsyncIterator
+from typing import AsyncIterator, Sequence, Callable, Any
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 from sqlalchemy.ext.asyncio import (
@@ -8,107 +8,6 @@ from sqlalchemy.ext.asyncio import (
     AsyncConnection,
     create_async_engine,
 )
-from sqlalchemy import event
-import asyncpg
-
-
-async def set_type_codec(
-    conn,
-    typenames,
-    encode=lambda a: a,
-    decode=lambda a: a,
-    schema="pg_catalog",
-    format="text",
-):
-    conn._check_open()
-    for typename in typenames:
-        typeinfo = await conn.fetchrow(
-            asyncpg.introspection.TYPE_BY_NAME, typename, schema
-        )
-        if not typeinfo:
-            raise ValueError(f"unknown type: {schema}.{typename}")
-
-        oid = typeinfo["oid"]
-        conn._protocol.get_settings().add_python_codec(
-            oid, typename, schema, "scalar", encode, decode, format
-        )
-
-    # Statement cache is no longer valid due to codec changes.
-    conn._drop_local_statement_cache()
-
-
-async def setup(conn):
-    # Register geometry type
-    await conn.set_type_codec(
-        "geometry", encoder=str, decoder=str, schema="public", format="text"
-    )
-
-
-    # Register h3 index type
-    await conn.set_type_codec(
-        "h3index", encoder=str, decoder=str, schema="public", format="text"
-    )
-
-    # Register integer array type
-    await set_type_codec(
-        conn,
-        ["_int4"],
-        encode=lambda a: "{"
-        + ",".join(map(str, a))
-        + "}",  # Convert list to PostgreSQL array literal
-        decode=lambda a: (
-            list(map(int, a.strip("{}").split(",")))
-            if a is not None and a != "{}"
-            else []
-        ),  # Convert PostgreSQL array literal to list, handling None and empty array
-        schema="pg_catalog",
-        format="text",
-    )
-    # Register biginteger array type
-    await set_type_codec(
-        conn,
-        ["_int8"],
-        encode=lambda a: "{"
-        + ",".join(map(str, a))
-        + "}",  # Convert list to PostgreSQL array literal
-        decode=lambda a: (
-            list(map(int, a.strip("{}").split(",")))
-            if a is not None and a != "{}"
-            else []
-        ),  # Convert PostgreSQL array literal to list
-        schema="pg_catalog",
-        format="text",
-    )
-
-    # # Register float array type
-    await set_type_codec(
-        conn,
-        ["_float8"],
-        encode=lambda a: "{"
-        + ",".join(map(str, a))
-        + "}",  # Convert list to PostgreSQL array literal
-        decode=lambda a: (
-            list(map(float, a.strip("{}").split(",")))
-            if a is not None and a != "{}"
-            else []
-        ),  # Convert PostgreSQL array literal to list
-        schema="pg_catalog",
-        format="text",
-    )
-
-    # Register UUID array type
-    await set_type_codec(
-        conn,
-        ["_uuid"],
-        encode=lambda a: "{" + ",".join(a) + "}",  # Directly join UUID strings
-        decode=lambda a: (
-            a.strip("{}").split(",")
-            if a is not None and a != "{}"
-            else []
-        ),  # Split string into UUID strings
-        schema="pg_catalog",
-        format="text",
-    )
 
 
 class DatabaseSessionManager:
@@ -120,7 +19,6 @@ class DatabaseSessionManager:
         self._engine = create_async_engine(
             host,
             isolation_level="AUTOCOMMIT",
-            connect_args={"server_settings": {"application_name": "GOAT Core"}},
         )
         self._session_maker = sessionmaker(
             bind=self._engine,
@@ -129,12 +27,6 @@ class DatabaseSessionManager:
             expire_on_commit=False,
             class_=AsyncSession,
         )
-        self.register_event_listeners()
-
-    def register_event_listeners(self):
-        @event.listens_for(self._engine.sync_engine, "connect")
-        def register_custom_types(dbapi_connection, connection_record):
-            dbapi_connection.run_async(setup)
 
     @contextlib.asynccontextmanager
     async def connect(self) -> AsyncIterator[AsyncConnection]:

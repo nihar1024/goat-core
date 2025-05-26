@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import SQLModel
 
@@ -37,15 +38,15 @@ async def read_chart_data(
     group_by = charts.get("group_by")
 
     if cumsum:
-        operation = ColumnStatisticsOperation.sum.value
+        operation = ColumnStatisticsOperation.sum
 
     # Get y_query
     x_label_mapped = search_value(layer_project.attribute_mapping, x_label)
     y_label_mapped = search_value(layer_project.attribute_mapping, y_label)
 
     # Replace count with sum in case operation is count
-    if operation == ColumnStatisticsOperation.count.value:
-        operation = ColumnStatisticsOperation.sum.value
+    if operation == ColumnStatisticsOperation.count:
+        operation = ColumnStatisticsOperation.sum
 
     if not group_by:
         # Define statistics query
@@ -100,7 +101,7 @@ async def read_chart_data(
         """
         # Adjust query based on cumsum
         if cumsum is False:
-            sql = f"""
+            sql = text(f"""
                 WITH unnested AS (
                     {sql_base}
                 ),
@@ -112,9 +113,9 @@ async def read_chart_data(
                 )
                 SELECT jsonb_agg(x) x, jsonb_agg(y), jsonb_agg("group")
                 FROM grouped
-            """
+            """)
         else:
-            sql = f"""
+            sql = text(f"""
                 WITH unnested AS (
                     {sql_base}
                 ),
@@ -131,7 +132,7 @@ async def read_chart_data(
                 )
                 SELECT jsonb_agg(x) AS x, jsonb_agg(y) AS y, jsonb_agg("group")
                 FROM second_grouped
-            """
+            """)
 
     result = await async_session.execute(sql)
     data = result.fetchall()
@@ -152,7 +153,7 @@ class Chart:
         operation: ColumnStatisticsOperation,
         x_label: str,
         y_label: str,
-        group_by: str = None,
+        group_by: str | None = None,
     ):
 
         # Map columns

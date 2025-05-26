@@ -1,7 +1,8 @@
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, Field, conlist, validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+from typing_extensions import Self
 
 from src.db.models.layer import LayerType, ToolType
 from src.schemas.catchment_area import (
@@ -128,7 +129,7 @@ class IAggregationBase(BaseModel):
         title="Column Statistics",
         description="The column statistics to be calculated.",
     )
-    source_group_by_field: conlist(str, min_items=0, max_items=3) | None = Field(
+    source_group_by_field: list[str] | None = Field(
         None,
         title="Source Group By Field",
         description="The field in the source layer that is used to group the aggregated points.",
@@ -139,43 +140,45 @@ class IAggregationBase(BaseModel):
         description="The ID of the scenario that is to be applied on the input layer or base network.",
     )
 
-    @validator("h3_resolution", pre=True, always=True)
-    def h3_grid_requires_resolution(cls, v, values):
-        if values.get("area_type") == AreaLayerType.h3_grid and v is None:
+    @field_validator("source_group_by_field", mode="after")
+    def check_source_group_by_field(cls, value: list[str] | None):
+        if value is not None and not (0 <= len(value) <= 3):
+                raise ValueError("The source_group_by_field must have between 0 and 3 elements.")
+        return value
+
+    @field_validator("h3_resolution", mode="after", check_fields=True)
+    def h3_grid_requires_resolution(cls, value: int | None, info: ValidationInfo):
+        if info.data.get("area_type") == AreaLayerType.h3_grid and value is None:
             raise ValueError(
                 "If area_type is h3_grid then h3_resolution cannot be null."
             )
-        return v
+        return value
 
-    @validator("aggregation_layer_project_id", pre=True, always=True)
-    def feature_layer_requires_aggregation_layer_project_id(cls, v, values):
-        if values.get("area_type") == AreaLayerType.feature and v is None:
+    @field_validator("aggregation_layer_project_id", mode="after", check_fields=True)
+    def feature_layer_requires_aggregation_layer_project_id(cls, value: int | None, info: ValidationInfo):
+        if info.data.get("area_type") == AreaLayerType.feature and value is None:
             raise ValueError(
                 "If area_type is feature then aggregation_layer_project_id cannot be null."
             )
-        return v
+        return value
 
-    @validator("h3_resolution", "aggregation_layer_project_id", pre=True, always=True)
-    def no_conflicting_area_layer_and_resolution(cls, v, values, field):
-        if "aggregation_layer_project_id" in values and "h3_resolution" in values:
-            if (
-                values["aggregation_layer_project_id"] is not None
-                and values["h3_resolution"] is not None
-            ):
-                raise ValueError(
-                    "Cannot specify both aggregation_layer_project_id and h3_resolution at the same time."
-                )
-        return v
+    @model_validator(mode="after")
+    def no_conflicting_area_layer_and_resolution(self) -> Self:
+        if self.aggregation_layer_project_id and self.h3_resolution:
+            raise ValueError(
+                "Cannot specify both aggregation_layer_project_id and h3_resolution at the same time."
+            )
+        return self
 
-    @validator("column_statistics", pre=True, always=True)
-    def check_column_statistics(cls, v, values):
-        if v.get("operation") == ColumnStatisticsOperation.count:
-            if v.get("field") is not None:
+    @field_validator("column_statistics", mode="after", check_fields=True)
+    def check_column_statistics(cls, value: ColumnStatistic):
+        if value.operation == ColumnStatisticsOperation.count:
+            if value.field is not None:
                 raise ValueError("Field is not allowed for count operation.")
         else:
-            if v.get("field") is None:
+            if value.field is None:
                 raise ValueError("Field is required for all operations except count.")
-        return v
+        return value
 
 
 class IAggregationPoint(IAggregationBase):
@@ -283,20 +286,20 @@ class IBuffer(BaseModel):
     )
 
     # Make sure that the number of steps is smaller then then max distance
-    @validator("distance_step", pre=True, always=True)
-    def distance_step_smaller_than_max_distance(cls, v, values):
-        if v > values["max_distance"]:
+    @field_validator("distance_step", mode="after", check_fields=True)
+    def distance_step_smaller_than_max_distance(cls, value: int, info: ValidationInfo):
+        if value > info.data["max_distance"]:
             raise ValueError("The distance step must be smaller than the max distance.")
-        return v
+        return value
 
     # Make sure that polygon difference is only True if polygon union is True
-    @validator("polygon_difference", pre=True)
-    def check_polygon_difference(cls, v, values):
-        if values["polygon_union"] is False and v is True:
+    @field_validator("polygon_difference", mode="after")
+    def check_polygon_difference(cls, value: bool | None, info: ValidationInfo):
+        if info.data["polygon_union"] is False and value is True:
             raise ValueError(
                 "You can only have polygon difference if polygon union is True."
             )
-        return v
+        return value
 
     @property
     def input_layer_types(self):
@@ -387,8 +390,8 @@ class IOriginDestination(BaseModel):
 class IToolParam(BaseModel):
     data: object
 
-    @validator("data", pre=True)
-    def check_type(cls, v):
+    @field_validator("data", mode="after")
+    def check_type(cls, value: object):
         allowed_types = (
             IJoin,
             IAggregationPoint,
@@ -397,9 +400,9 @@ class IToolParam(BaseModel):
             ICatchmentAreaCar,
             ICatchmentAreaPT,
         )
-        if not isinstance(v, allowed_types):
-            raise ValueError(f"Input type {type(v).__name__} not allowed")
-        return v
+        if not isinstance(value, allowed_types):
+            raise ValueError(f"Input type {type(value).__name__} not allowed")
+        return value
 
 
 request_examples_join = {

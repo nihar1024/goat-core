@@ -1,6 +1,8 @@
 import json
 from datetime import timedelta
 
+from sqlalchemy import text
+
 from src.core.config import settings
 from src.core.job import job_init, job_log, run_background_or_immediately
 from src.core.tool import CRUDToolBase
@@ -62,7 +64,7 @@ class CRUDTripCountStation(CRUDToolBase):
                 flat_mode_mapping[str(inner_key)] = outer_key
 
         # Get trip count using sql function
-        sql_query = f"""
+        sql_query = text(f"""
             INSERT INTO {self.result_table}(layer_id, geom, {', '.join(result_layer.attribute_mapping.keys())})
             SELECT '{str(result_layer.id)}', s.geom, s.stop_id, s.stop_name, s.trip_cnt,
             (summarized ->> 'bus')::integer AS bus, (summarized ->> 'tram')::integer AS tram, (summarized ->> 'metro')::integer AS metro,
@@ -79,7 +81,7 @@ class CRUDTripCountStation(CRUDToolBase):
                 '{str(timedelta(seconds=params.time_window.to_time))}',
                 {params.time_window.weekday_integer}
             ) s, LATERAL basic.summarize_trip_count(trip_cnt, '{json.dumps(flat_mode_mapping)}'::JSONB) summarized
-        """
+        """)
         await self.async_session.execute(sql_query, {"where_query": where_query})
         await self.async_session.commit()
 

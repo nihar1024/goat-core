@@ -2,7 +2,7 @@ from enum import Enum
 from typing import List
 from uuid import UUID
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from src.core.config import settings
 from src.schemas.colors import ColorRangeType
@@ -113,14 +113,37 @@ class OpportunityGravityBased(OpportunityBase):
     )
 
     # Ensure sensitivity doesn't exceed the configured limit
-    @validator("sensitivity", pre=True, always=True)
-    def valid_sensitivity(cls, v):
-        if v > settings.HEATMAP_GRAVITY_MAX_SENSITIVITY:
+    @field_validator("sensitivity", mode="after", check_fields=True)
+    def valid_sensitivity(cls, value: float):
+        if value > settings.HEATMAP_GRAVITY_MAX_SENSITIVITY:
             raise ValueError(
                 f"The sensitivity must not exceed {settings.HEATMAP_GRAVITY_MAX_SENSITIVITY}."
             )
-        return v
+        return value
 
+def _validate_max_traveltime(routing_type, values):
+    max_traveltime = MaxTravelTimeTransportMode[routing_type].value
+    valid = True
+
+    if values.get("opportunities"):
+        for opportunity in values.get("opportunities"):
+            if opportunity.max_traveltime > max_traveltime:
+                valid = False
+                break
+    elif values.get("max_traveltime"):
+        if values.get("max_traveltime") > max_traveltime:
+            valid = False
+    else:
+        raise ValueError(
+            f"Max travel time must be specified for {routing_type} routing type."
+        )
+
+    if not valid:
+        raise ValueError(
+            f"Max supported travel time for {routing_type} is {max_traveltime} minutes."
+        )
+
+    return routing_type
 
 class HeatmapGravityBase(BaseModel):
     """Gravity based heatmap schema."""
@@ -146,15 +169,6 @@ class HeatmapGravityBase(BaseModel):
         title="Opportunity geofence layer project ID",
         description="The layer project ID of a geofence to be used for limiting opportunities to a certain region.",
     )
-
-    def validate_max_traveltime(routing_type, values):
-        max_traveltime = MaxTravelTimeTransportMode[routing_type].value
-        for opportunity in values.get("opportunities"):
-            if opportunity.max_traveltime > max_traveltime:
-                raise ValueError(
-                    f"Max supported travel time for {routing_type} is {max_traveltime} minutes."
-                )
-        return routing_type
 
     @property
     def input_layer_types(self):
@@ -182,15 +196,6 @@ class HeatmapClosestAverageBase(BaseModel):
         title="Opportunity geofence layer project ID",
         description="The layer project ID of a geofence to be used for limiting opportunities to a certain region.",
     )
-
-    def validate_max_traveltime(routing_type, values):
-        max_traveltime = MaxTravelTimeTransportMode[routing_type].value
-        for opportunity in values.get("opportunities"):
-            if opportunity.max_traveltime > max_traveltime:
-                raise ValueError(
-                    f"Max supported travel time for {routing_type} is {max_traveltime} minutes."
-                )
-        return routing_type
 
     @property
     def input_layer_types(self):
@@ -221,14 +226,6 @@ class HeatmapConnectivityBase(BaseModel):
         description="The ID of the scenario that is to be applied on the input layer or base network.",
     )
 
-    def validate_max_traveltime(routing_type, values):
-        max_traveltime = MaxTravelTimeTransportMode[routing_type].value
-        if values.get("max_traveltime") > max_traveltime:
-            raise ValueError(
-                f"Max supported travel time for {routing_type} is {max_traveltime} minutes."
-            )
-        return routing_type
-
     @property
     def input_layer_types(self):
         return {"reference_area_layer_project_id": input_layer_type_polygon}
@@ -243,9 +240,9 @@ class IHeatmapGravityActive(HeatmapGravityBase):
         description="The routing type of the heatmap.",
     )
 
-    @validator("routing_type")
-    def validate_routing_type(cls, routing_type, values):
-        return super().validate_max_traveltime(routing_type, values)
+    @field_validator("routing_type", mode="after")
+    def validate_routing_type(cls, value: ActiveRoutingHeatmapType, info: ValidationInfo):
+        return _validate_max_traveltime(value, info.data)
 
     @property
     def tool_type(self):
@@ -274,9 +271,9 @@ class IHeatmapGravityMotorized(HeatmapGravityBase):
         description="The routing type of the heatmap.",
     )
 
-    @validator("routing_type")
-    def validate_routing_type(cls, routing_type, values):
-        return super().validate_max_traveltime(routing_type, values)
+    @field_validator("routing_type", mode="after")
+    def validate_routing_type(cls, value: MotorizedRoutingHeatmapType, info: ValidationInfo):
+        return _validate_max_traveltime(value, info.data)
 
     @property
     def tool_type(self):
@@ -305,9 +302,9 @@ class IHeatmapClosestAverageActive(HeatmapClosestAverageBase):
         description="The routing type of the heatmap.",
     )
 
-    @validator("routing_type")
-    def validate_routing_type(cls, routing_type, values):
-        return super().validate_max_traveltime(routing_type, values)
+    @field_validator("routing_type", mode="after")
+    def validate_routing_type(cls, value: ActiveRoutingHeatmapType, info: ValidationInfo):
+        return _validate_max_traveltime(value, info.data)
 
     @property
     def tool_type(self):
@@ -336,9 +333,9 @@ class IHeatmapClosestAverageMotorized(HeatmapClosestAverageBase):
         description="The routing type of the heatmap.",
     )
 
-    @validator("routing_type")
-    def validate_routing_type(cls, routing_type, values):
-        return super().validate_max_traveltime(routing_type, values)
+    @field_validator("routing_type", mode="after")
+    def validate_routing_type(cls, value: MotorizedRoutingHeatmapType, info: ValidationInfo):
+        return _validate_max_traveltime(value, info.data)
 
     @property
     def tool_type(self):
@@ -367,9 +364,9 @@ class IHeatmapConnectivityActive(HeatmapConnectivityBase):
         description="The routing type of the heatmap.",
     )
 
-    @validator("routing_type")
-    def validate_routing_type(cls, routing_type, values):
-        return super().validate_max_traveltime(routing_type, values)
+    @field_validator("routing_type", mode="after")
+    def validate_routing_type(cls, value: ActiveRoutingHeatmapType, info: ValidationInfo):
+        return _validate_max_traveltime(value, info.data)
 
     @property
     def tool_type(self):
@@ -398,9 +395,9 @@ class IHeatmapConnectivityMotorized(HeatmapConnectivityBase):
         description="The routing type of the heatmap.",
     )
 
-    @validator("routing_type")
-    def validate_routing_type(cls, routing_type, values):
-        return super().validate_max_traveltime(routing_type, values)
+    @field_validator("routing_type", mode="after")
+    def validate_routing_type(cls, value: MotorizedRoutingHeatmapType, info: ValidationInfo):
+        return _validate_max_traveltime(value, info.data)
 
     @property
     def tool_type(self):

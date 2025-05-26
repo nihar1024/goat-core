@@ -29,7 +29,6 @@ from src.schemas.common import OrderEnum
 from src.schemas.project import (
     InitialViewState,
     IProjectBaseUpdate,
-    IProjectCreate,
     IProjectRead,
     ProjectPublicConfig,
     ProjectPublicProjectConfig,
@@ -41,7 +40,7 @@ class CRUDProject(CRUDBase):
     async def create(
         self,
         async_session: AsyncSession,
-        project_in: IProjectCreate,
+        project_in: Project,
         initial_view_state: InitialViewState,
     ) -> IProjectRead:
         """Create project"""
@@ -69,7 +68,7 @@ class CRUDProject(CRUDBase):
                 user_id=project.user_id,
                 project_id=project.id,
                 initial_view_state=initial_view_state,
-            ),
+            ).model_dump(),
         )
         # If not in testing environment add default layers to project
         if not settings.TESTING:

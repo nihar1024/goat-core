@@ -442,9 +442,9 @@ class CRUDLayer(CRUDLayerBase):
         where_query = "WHERE " + where_query
 
         # Call SQL function
-        sql_query = f"""
+        sql_query = text(f"""
             SELECT * FROM basic.area_statistics('{operation.value}', '{layer.table_name}', '{where_query.replace("'", "''")}')
-        """
+        """)
         res = await async_session.execute(
             sql_query,
         )
@@ -499,7 +499,7 @@ class CRUDLayer(CRUDLayerBase):
             raise OperationNotSupportedError("Operation not supported")
 
         # Execute the query
-        res = await async_session.execute(sql_query, args)
+        res = await async_session.execute(text(sql_query), args)
         res = res.fetchall()
         return res[0][0] if res else None
 
@@ -699,7 +699,7 @@ class CRUDLayer(CRUDLayerBase):
             # Get attribute from layer
             group_by = getattr(Layer, key)
             sql_query = (
-                select([group_by, func.count(Layer.id).label("count")])
+                select(group_by, func.count(Layer.id).label("count"))
                 .where(and_(*filters))
                 .group_by(group_by)
             )
@@ -760,9 +760,6 @@ class CRUDLayerImport(CRUDFailedJob):
             additional_attributes = IFeatureStandardCreateAdditionalAttributes(
                 **additional_attributes
             ).dict()
-            additional_attributes["upload_reference_system"] = file_metadata[
-                "data_types"
-            ]["geometry"]["srs"]
         else:
             additional_attributes["type"] = LayerType.table
             additional_attributes = ITableCreateAdditionalAttributes(
@@ -790,7 +787,7 @@ class CRUDLayerImport(CRUDFailedJob):
         )
         layer = await CRUDLayer(Layer).create(
             db=self.async_session,
-            obj_in=layer_in,
+            obj_in=layer_in.model_dump(),
         )
 
         # Label cluster_keep

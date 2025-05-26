@@ -6,8 +6,9 @@ from uuid import UUID
 from fastapi import BackgroundTasks, Depends, Query
 
 # Third-party Libraries
-from pydantic import BaseModel, Field, root_validator, validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing_extensions import Self
 
 from src.db.models.layer import LayerType
 
@@ -148,11 +149,11 @@ class CatchmentAreaStartingPointsBase(BaseModel):
         description="The ID of the layer project that contains the starting points.",
     )
 
-    @root_validator(pre=True)
-    def check_either_coords_or_layer_project_id(cls, values):
-        lat = values.get("latitude")
-        long = values.get("longitude")
-        layer_project_id = values.get("layer_project_id")
+    @model_validator(mode="after")
+    def check_either_coords_or_layer_project_id(self) -> Self:
+        lat = self.latitude
+        long = self.longitude
+        layer_project_id = self.layer_project_id
 
         if lat and long:
             if layer_project_id:
@@ -175,14 +176,14 @@ class CatchmentAreaStartingPointsBase(BaseModel):
                 "Must provide either latitude and longitude or layer_project_id."
             )
 
-        return values
+        return self
 
 
 def check_starting_points(max_count):
-    @root_validator(pre=True, allow_reuse=True)
-    def _validator(cls, values):
-        lat = values.get("latitude")
-        long = values.get("longitude")
+    @model_validator(mode="after")
+    def _validator(self) -> Self:
+        lat = self.latitude
+        long = self.longitude
 
         if lat and long:
             if len(lat) > max_count:
@@ -193,7 +194,7 @@ def check_starting_points(max_count):
                 raise ValueError(
                     f"The maximum number of starting points is {max_count}."
                 )
-        return values
+        return self
 
     return _validator
 
@@ -268,8 +269,8 @@ class CommonToolParams:
 class InputLayerType(BaseModel):
     """Input layer type schema."""
 
-    layer_types: List[LayerType] | None = Field(
-        [LayerType.feature.value, LayerType.table.value],
+    layer_types: List[LayerType] = Field(
+        [LayerType.feature, LayerType.table],
         title="Layer Types",
         description="The layer types that are supported for the respective input layer of the tool.",
     )
@@ -279,16 +280,17 @@ class InputLayerType(BaseModel):
         description="The feature layer geometry types that are supported for the respective input layer of the tool.",
     )
 
-    @validator("layer_types", each_item=True)
-    def validate_layer_types(cls, layer_type):
-        if layer_type not in LayerType.__members__:
-            raise ValueError(f"{layer_type} is not a valid LayerType")
-        return layer_type
+    @field_validator("layer_types", mode="after")
+    def validate_layer_types(cls, value: List[LayerType]):
+        for layer_type in value:
+            if layer_type not in LayerType.__members__:
+                raise ValueError(f"{layer_type} is not a valid LayerType")
+        return value
 
-    @root_validator(pre=True)
-    def validate_feature_layer_geometry_types(cls, values):
-        layer_types = values.get("layer_types")
-        feature_layer_geometry_types = values.get("feature_layer_geometry_types")
+    @model_validator(mode="after")
+    def validate_feature_layer_geometry_types(self) -> Self:
+        layer_types = self.layer_types
+        feature_layer_geometry_types = self.feature_layer_geometry_types
 
         if LayerType.feature.value in layer_types:
             if feature_layer_geometry_types is None:
@@ -305,7 +307,7 @@ class InputLayerType(BaseModel):
                 "layer_type must be either feature or table, not both or none."
             )
 
-        return values
+        return self
 
 
 input_layer_type_point = InputLayerType(

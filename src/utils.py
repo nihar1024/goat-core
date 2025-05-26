@@ -40,7 +40,8 @@ from src.schemas.common import CQLQuery
 def optional(*fields):
     def dec(_cls):
         for field in fields:
-            _cls.__fields__[field].required = False
+            # TODO: Take another look at this
+            # _cls.__fields__[field].required = False
             if _cls.__fields__[field].default:
                 _cls.__fields__[field].default = None
         return _cls
@@ -327,7 +328,7 @@ def sanitize_error_message(message: str) -> str:
         settings.POSTGRES_PORT: "HIDDEN_PORT",
     }
     for key, value in replacements.items():
-        message = message.replace(key, value)
+        message = message.replace(str(key), value)
     return message
 
 
@@ -556,15 +557,13 @@ async def delete_orphans(
     link_table_name = (
         f"{link_table_model.__table_args__['schema']}.{link_table_model.__tablename__}"
     )
-    sql = text(
-        f"""
-    DELETE FROM {child_table_name}
-    WHERE {column_name} NOT IN (
-        SELECT {link_column_name}
-        FROM {link_table_name}
-    )
-    """
-    )
+    sql = text(f"""
+        DELETE FROM {child_table_name}
+        WHERE {column_name} NOT IN (
+            SELECT {link_column_name}
+            FROM {link_table_name}
+        )
+    """)
     await db.execute(sql)
 
 

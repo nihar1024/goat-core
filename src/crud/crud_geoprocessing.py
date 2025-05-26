@@ -1,3 +1,5 @@
+from sqlalchemy import text
+
 from src.core.config import settings
 from src.core.job import job_init, job_log, run_background_or_immediately
 from src.core.tool import CRUDToolBase
@@ -69,7 +71,7 @@ class CRUDBuffer(CRUDToolBase):
         # Create wrapper for polygon difference between buffer steps using CROSS JOIN LATERAL
         if params.polygon_difference:
             # Build buffer query
-            sql_combined_query = f"""
+            sql_combined_query = text(f"""
             INSERT INTO {self.result_table}(layer_id, geom, integer_attr1)
             WITH buffered AS
             (
@@ -94,12 +96,12 @@ class CRUDBuffer(CRUDToolBase):
             SELECT *
             FROM diff
             ORDER BY buffer_size
-            """
+            """)
         else:
-            sql_combined_query = f"""
+            sql_combined_query = text(f"""
             INSERT INTO {self.result_table}(layer_id, geom, integer_attr1)
             {sql_buffer_query}
-            """
+            """)
         # Execute query
         await self.async_session.execute(sql_combined_query)
         await self.async_session.commit()

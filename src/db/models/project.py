@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, List
 from uuid import UUID
 
-from pydantic import HttpUrl
+from pydantic import HttpUrl, field_validator
 from sqlalchemy import Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as UUID_PG
@@ -79,7 +79,7 @@ class Project(ContentBaseAttributes, DateTimeBase, table=True):
         sa_column=Column(Text, nullable=True),
         description="Project basemap",
     )
-    thumbnail_url: HttpUrl | None = Field(
+    thumbnail_url: str | None = Field(
         sa_column=Column(Text, nullable=True),
         description="Project thumbnail URL",
         default=settings.DEFAULT_PROJECT_THUMBNAIL,
@@ -98,6 +98,11 @@ class Project(ContentBaseAttributes, DateTimeBase, table=True):
         ),
         description="Builder config",
     )
+    tags: List[str] | None = Field(
+        default=None,
+        sa_column=Column(ARRAY(Text), nullable=True), description="Layer tags"
+    )
+
     # Relationships
     user_projects: List["UserProjectLink"] = Relationship(
         back_populates="project",
@@ -125,6 +130,15 @@ class Project(ContentBaseAttributes, DateTimeBase, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False},
     )
 
+    @field_validator("thumbnail_url", mode="before")
+    def convert_httpurl_to_str(cls, value: str | HttpUrl | None) -> str | None:
+        if value is None:
+            return value
+        elif isinstance(value, HttpUrl):
+            return str(value)
+        assert HttpUrl(value)
+        return value
+
 
 class ProjectPublic(DateTimeBase, table=True, extend_existing=True):
     """
@@ -150,10 +164,10 @@ class ProjectPublic(DateTimeBase, table=True, extend_existing=True):
     password: str | None = Field(sa_column=Column(Text, nullable=True), max_length=255)
     config: dict = Field(sa_column=Column(JSONB, nullable=False))
     project_id: UUID = Field(
-        nullable=False,
         sa_column=Column(
             UUID_PG(as_uuid=True),
             ForeignKey(f"{settings.CUSTOMER_SCHEMA}.project.id", ondelete="CASCADE"),
+            nullable=False,
         ),
     )
 

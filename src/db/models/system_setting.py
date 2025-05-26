@@ -34,10 +34,6 @@ class SystemSettingBase(SQLModel):
     preferred_language: LanguageType = Field(sa_column=Column(Text, nullable=False))
     unit: UnitType = Field(sa_column=Column(Text, nullable=False))
 
-    user: "User" = Relationship(
-        sa_relationship_kwargs={"uselist": False}, back_populates="system_setting"
-    )
-
 
 class SystemSetting(SystemSettingBase, DateTimeBase, table=True):
     __tablename__ = "system_setting"

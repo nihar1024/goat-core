@@ -3,15 +3,18 @@ from enum import Enum
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl, validator
-from sqlmodel import SQLModel
+from pydantic import BaseModel, HttpUrl, ValidationInfo, computed_field, field_validator
+from sqlmodel import ARRAY, Column, Field, ForeignKey, SQLModel, Text
+from sqlmodel import UUID as UUID_PG
 
+from src.core.config import settings
 from src.db.models._base_class import DateTimeBase
 from src.db.models.layer import ContentBaseAttributes, internal_layer_table_name
 from src.schemas.common import CQLQuery
 from src.schemas.layer import (
     ExternalServiceOtherProperties,
     IFeatureStandardRead,
+    IFeatureStreetNetworkRead,
     IFeatureToolRead,
     IRasterRead,
     ITableRead,
@@ -35,19 +38,25 @@ class InitialViewState(BaseModel):
     bearing: int = Field(..., description="Bearing", ge=0, le=360)
     pitch: int = Field(..., description="Pitch", ge=0, le=60)
 
-    @validator("max_zoom")
-    def check_max_zoom(cls, max_zoom, values):
-        min_zoom = values.get("min_zoom")
-        if min_zoom is not None and max_zoom < min_zoom:
-            raise ValueError("max_zoom should be greater than or equal to min_zoom")
-        return max_zoom
+    @field_validator("zoom", mode="before")
+    def convert_zoom(cls, value: int | float):
+        if isinstance(value, float):
+            return int(value)
+        return value
 
-    @validator("min_zoom")
-    def check_min_zoom(cls, min_zoom, values):
-        max_zoom = values.get("max_zoom")
-        if max_zoom is not None and min_zoom > max_zoom:
+    @field_validator("max_zoom", mode="after")
+    def check_max_zoom(cls, value: int, info: ValidationInfo):
+        min_zoom = info.data.get("min_zoom")
+        if min_zoom is not None and value < min_zoom:
+            raise ValueError("max_zoom should be greater than or equal to min_zoom")
+        return value
+
+    @field_validator("min_zoom", mode="after")
+    def check_min_zoom(cls, value: int, info: ValidationInfo):
+        max_zoom = info.data.get("max_zoom")
+        if max_zoom is not None and value > max_zoom:
             raise ValueError("min_zoom should be less than or equal to max_zoom")
-        return min_zoom
+        return value
 
 
 initial_view_state_example = {
@@ -65,6 +74,10 @@ class IProjectCreate(ContentBaseAttributes):
     initial_view_state: InitialViewState = Field(
         ..., description="Initial view state of the project"
     )
+    tags: List[str] | None = Field(
+        default=None,
+        sa_column=Column(ARRAY(Text), nullable=True), description="Layer tags"
+    )
 
 
 class IProjectRead(ContentBaseAttributes, DateTimeBase):
@@ -79,10 +92,32 @@ class IProjectRead(ContentBaseAttributes, DateTimeBase):
     max_extent: list[float] | None = Field(
         None, description="Max extent of the project"
     )
+    tags: List[str] | None = Field(
+        default=None,
+        sa_column=Column(ARRAY(Text), nullable=True), description="Layer tags"
+    )
 
 
-@optional
-class IProjectBaseUpdate(ContentBaseAttributes):
+class IProjectBaseUpdate(SQLModel):
+    folder_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            UUID_PG(as_uuid=True),
+            ForeignKey(f"{settings.CUSTOMER_SCHEMA}.folder.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        description="Layer folder ID",
+    )
+    name: str | None = Field(
+        default=None,
+        sa_type=Text, description="Layer name", max_length=255, nullable=False
+    )
+    description: str | None = Field(
+        default=None,
+        sa_type=Text,
+        description="Layer description",
+        max_length=2000,
+    )
     layer_order: list[int] | None = Field(None, description="Layer order in project")
     basemap: str | None = Field(None, description="Project basemap")
     max_extent: list[float] | None = Field(
@@ -90,15 +125,20 @@ class IProjectBaseUpdate(ContentBaseAttributes):
     )
     active_scenario_id: UUID | None = Field(None, description="Active scenario ID")
     builder_config: dict | None = Field(None, description="Builder config")
-
-
-class dict(dict):
-    layout: dict = Field(
-        {"visibility": "visible"},
-        description="Layout properties",
+    tags: List[str] | None = Field(
+        default=None,
+        sa_column=Column(ARRAY(Text), nullable=True), description="Layer tags"
     )
-    minzoom: int = Field(2, description="Minimum zoom level", ge=0, le=22)
-    maxzoom: int = Field(20, description="Maximum zoom level", ge=0, le=22)
+
+
+# TODO: Figure out where this is used, refactor
+# class dict(dict):
+#     layout: dict = Field(
+#         {"visibility": "visible"},
+#         description="Layout properties",
+#     )
+#     minzoom: int = Field(2, description="Minimum zoom level", ge=0, le=22)
+#     maxzoom: int = Field(20, description="Maximum zoom level", ge=0, le=22)
 
 
 class LayerProjectIds(BaseModel):
@@ -107,16 +147,16 @@ class LayerProjectIds(BaseModel):
 
 
 class IFeatureBaseProject(CQLQuery):
-    name: str = Field(..., description="Layer name")
     group: str | None = Field(None, description="Layer group name")
-    properties: dict = Field(
-        ...,
-        description="Layer properties",
-    )
     charts: dict | None = Field(None, description="Layer chart properties")
 
 
 class IFeatureBaseProjectRead(IFeatureBaseProject):
+    name: str = Field(..., description="Layer name")
+    properties: dict = Field(
+        ...,
+        description="Layer properties",
+    )
     total_count: int | None = Field(
         None, description="Total count of features in the layer"
     )
@@ -157,44 +197,51 @@ class IFeatureToolProjectRead(
 
 
 class IFeatureStreetNetworkProjectRead(
-    LayerProjectIds, IFeatureStandardRead, IFeatureBaseProjectRead
+    LayerProjectIds, IFeatureStreetNetworkRead, IFeatureBaseProjectRead
 ):
     pass
 
 
-@optional
 class IFeatureStandardProjectUpdate(IFeatureBaseProject):
-    pass
+    name: str | None = Field(None, description="Layer name")
+    properties: dict | None = Field(
+        default=None,
+        description="Layer properties",
+    )
 
 
-@optional
 class IFeatureStreetNetworkProjectUpdate(IFeatureBaseProject):
-    pass
+    name: str | None = Field(None, description="Layer name")
+    properties: dict | None = Field(
+        default=None,
+        description="Layer properties",
+    )
 
 
-@optional
 class IFeatureToolProjectUpdate(IFeatureBaseProject):
-    pass
+    name: str | None = Field(None, description="Layer name")
+    properties: dict | None = Field(
+        default=None,
+        description="Layer properties",
+    )
 
 
 class ITableProjectRead(LayerProjectIds, ITableRead, CQLQuery):
-    group: str = Field(None, description="Layer group name", max_length=255)
+    group: str | None = Field(None, description="Layer group name", max_length=255)
     total_count: int | None = Field(
         None, description="Total count of features in the layer"
     )
     filtered_count: int | None = Field(
         None, description="Filtered count of features in the layer"
     )
-    table_name: str | None = Field(None, description="Table name")
-    where_query: str | None = Field(None, description="Where query")
 
     # Compute table_name and where_query
-    @property
-    def table_name(self):
+    @computed_field
+    def table_name(self) -> str:
         return internal_layer_table_name(self)
 
-    @property
-    def where_query(self):
+    @computed_field
+    def where_query(self) -> str:
         return where_query(self)
 
 
@@ -205,7 +252,7 @@ class ITableProjectUpdate(CQLQuery):
 
 
 class IRasterProjectRead(LayerProjectIds, IRasterRead):
-    group: str = Field(None, description="Layer group name", max_length=255)
+    group: str | None = Field(None, description="Layer group name", max_length=255)
     properties: Optional[dict] = Field(
         None,
         description="Layer properties",
@@ -247,7 +294,7 @@ class ProjectPublicProjectConfig(BaseModel):
     id: UUID = Field(..., description="Project ID")
     name: str = Field(..., description="Project name")
     description: str | None = Field(..., description="Project description")
-    tags: List[str] | None = Field(None, description="Project tags")
+    tags: List[str] | None = Field(default=None, description="Project tags")
     thumbnail_url: HttpUrl | None = Field(None, description="Project thumbnail URL")
     initial_view_state: InitialViewState = Field(
         ..., description="Initial view state of the project"
@@ -262,12 +309,7 @@ class ProjectPublicProjectConfig(BaseModel):
 
 
 class ProjectPublicConfig(BaseModel):
-    layers: List[
-        IFeatureStandardProjectRead
-        | IFeatureToolProjectRead
-        | ITableProjectRead
-        | IRasterProjectRead
-    ] = Field(..., description="Layers of the project")
+    layers: list = Field(..., description="Layers of the project")
     project: ProjectPublicProjectConfig = Field(
         ..., description="Project configuration"
     )

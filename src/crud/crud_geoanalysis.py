@@ -215,22 +215,22 @@ class CRUDAggregatePoint(CRUDAggregateBase):
         # Create query
         if aggregation_layer_project:
             # Define subquery for grouped by id only
-            sql_query_total_stats = f"""
+            sql_query_total_stats = text(f"""
                 CREATE TABLE {self.table_name_total_stats} AS
                 SELECT {temp_aggregation}.id, {statistics_column_query} AS stats
                 FROM {temp_aggregation}, {temp_source}
                 WHERE ST_Intersects({temp_aggregation}.geom, {temp_source}.geom)
                 AND {temp_aggregation}.h3_3 = {temp_source}.h3_3
                 GROUP BY {temp_aggregation}.id
-            """
+            """)
             await self.async_session.execute(sql_query_total_stats)
             await self.async_session.execute(
-                f"CREATE INDEX ON {self.table_name_total_stats} (id);"
+                text(f"CREATE INDEX ON {self.table_name_total_stats} (id);")
             )
 
             if params.source_group_by_field:
                 # Define subquery for grouped by id and group_by_field
-                sql_query_group_stats = f"""
+                sql_query_group_stats = text(f"""
                     CREATE TABLE {self.table_name_grouped_stats} AS
                     SELECT id, JSONB_OBJECT_AGG(group_column_name, stats) AS stats
                     FROM
@@ -242,14 +242,14 @@ class CRUDAggregatePoint(CRUDAggregateBase):
                         GROUP BY {temp_aggregation}.id, {group_by_columns}
                     ) AS to_group
                     GROUP BY id
-                """
-                await self.async_session.execute(text(sql_query_group_stats))
+                """)
+                await self.async_session.execute(sql_query_group_stats)
                 await self.async_session.execute(
-                    f"CREATE INDEX ON {self.table_name_grouped_stats} (id);"
+                    text(f"CREATE INDEX ON {self.table_name_grouped_stats} (id);")
                 )
 
                 # Build combined query with two left joins
-                sql_query = f"""
+                sql_query = text(f"""
                     INSERT INTO {self.result_table} (layer_id, {insert_columns})
                     WITH first_join AS
                     (
@@ -262,33 +262,33 @@ class CRUDAggregatePoint(CRUDAggregateBase):
                     LEFT JOIN first_join f
                     ON {aggregation_layer_project.table_name}.id = f.id
                     WHERE {aggregation_layer_project.where_query}
-                """
+                """)
             else:
                 # Build combined query with one left join
-                sql_query = f"""
+                sql_query = text(f"""
                     INSERT INTO {self.result_table} (layer_id, {insert_columns})
                     SELECT '{layer_in.id}', {select_columns}, t.stats AS total_stats
                     FROM {aggregation_layer_project.table_name}
                     LEFT JOIN {self.table_name_total_stats} t
                     ON {aggregation_layer_project.table_name}.id = t.id
                     WHERE {aggregation_layer_project.where_query}
-                """
+                """)
         else:
             # If aggregation_layer_project_id does not exist the h3 grid will be taken for the intersection
-            sql_query_total_stats = f"""
+            sql_query_total_stats = text(f"""
                 CREATE TABLE {self.table_name_total_stats} AS
                 SELECT h3_lat_lng_to_cell(geom::point, {params.h3_resolution}) h3_index, {statistics_column_query} AS stats
                 FROM {temp_source}
                 GROUP BY h3_lat_lng_to_cell(geom::point, {params.h3_resolution})
-            """
+            """)
             await self.async_session.execute(sql_query_total_stats)
             await self.async_session.execute(
-                f"CREATE INDEX ON {self.table_name_total_stats} (h3_index);"
+                text(f"CREATE INDEX ON {self.table_name_total_stats} (h3_index);")
             )
 
             if params.source_group_by_field:
                 # Define subquery for grouped by id and group_by_field
-                sql_query_group_stats = f"""
+                sql_query_group_stats = text(f"""
                     CREATE TABLE {self.table_name_grouped_stats} AS
                     SELECT h3_index, JSONB_OBJECT_AGG(group_column_name, stats) AS stats
                     FROM
@@ -298,26 +298,26 @@ class CRUDAggregatePoint(CRUDAggregateBase):
                         GROUP BY h3_lat_lng_to_cell(geom::point, {params.h3_resolution}), {group_by_columns}
                     ) AS to_group
                     GROUP BY h3_index
-                """
+                """)
                 await self.async_session.execute(sql_query_group_stats)
                 await self.async_session.execute(
-                    f"CREATE INDEX ON {self.table_name_grouped_stats} (h3_index);"
+                    text(f"CREATE INDEX ON {self.table_name_grouped_stats} (h3_index);")
                 )
 
-                sql_query = f"""
+                sql_query = text(f"""
                     INSERT INTO {self.result_table} (layer_id, {insert_columns})
                     SELECT '{layer_in.id}', ST_SETSRID(h3_cell_to_boundary(t.h3_index)::geometry, 4326),
                     t.h3_index, t.stats AS total_stats, g.stats AS grouped_stats
                     FROM {self.table_name_total_stats} t, {self.table_name_grouped_stats} g
                     WHERE t.h3_index = g.h3_index
-                """
+                """)
             else:
-                sql_query = f"""
+                sql_query = text(f"""
                     INSERT INTO {self.result_table} (layer_id, {insert_columns})
                     SELECT '{layer_in.id}', ST_SETSRID(h3_cell_to_boundary(h3_index)::geometry, 4326),
                     h3_index, t.stats AS total_stats
                     FROM {self.table_name_total_stats} t
-                """
+                """)
         # Execute query
         await self.async_session.execute(sql_query)
 
@@ -382,23 +382,23 @@ class CRUDAggregatePolygon(CRUDAggregateBase):
                 statistics_column_query = f"{statistics_column_query} * SUM(ST_AREA(ST_INTERSECTION({temp_aggregation}.geom, {temp_source}.geom)) / ST_AREA({temp_source}.geom))"
 
             # Define subquery for grouped by id only
-            sql_query_total_stats = f"""
+            sql_query_total_stats = text(f"""
                 CREATE TABLE {self.table_name_total_stats} AS
                 SELECT {temp_aggregation}.id, round(({statistics_column_query})::numeric, 6) AS stats
                 FROM {temp_aggregation}, {temp_source}
                 WHERE ST_Intersects({temp_aggregation}.geom, {temp_source}.geom)
                 AND {temp_aggregation}.h3_3 = {temp_source}.h3_3
                 GROUP BY {temp_aggregation}.id
-            """
+            """)
             await self.async_session.execute(sql_query_total_stats)
             await self.async_session.execute(
-                f"CREATE INDEX ON {self.table_name_total_stats} (id);"
+                text(f"CREATE INDEX ON {self.table_name_total_stats} (id);")
             )
 
             if params.source_group_by_field:
                 # Define subquery for grouped by id and group_by_field
 
-                sql_query_group_stats = f"""
+                sql_query_group_stats = text(f"""
                     CREATE TABLE {self.table_name_grouped_stats} AS
                     SELECT id, JSONB_OBJECT_AGG(group_column_name, stats) AS stats
                     FROM
@@ -410,14 +410,14 @@ class CRUDAggregatePolygon(CRUDAggregateBase):
                         GROUP BY {temp_aggregation}.id, {group_by_columns}
                     ) AS to_group
                     GROUP BY id
-                """
-                await self.async_session.execute(text(sql_query_group_stats))
+                """)
+                await self.async_session.execute(sql_query_group_stats)
                 await self.async_session.execute(
-                    f"CREATE INDEX ON {self.table_name_grouped_stats} (id);"
+                    text(f"CREATE INDEX ON {self.table_name_grouped_stats} (id);")
                 )
 
                 # Build combined query with two left joins
-                sql_query_combine = f"""
+                sql_query_combine = text(f"""
                     INSERT INTO {self.result_table} (layer_id, {insert_columns})
                     WITH first_join AS
                     (
@@ -430,21 +430,21 @@ class CRUDAggregatePolygon(CRUDAggregateBase):
                     LEFT JOIN first_join f
                     ON {aggregation_layer_project.table_name}.id = f.id
                     WHERE {aggregation_layer_project.where_query}
-                """
+                """)
             else:
                 # Build combined query with one left join
-                sql_query_combine = f"""
+                sql_query_combine = text(f"""
                     INSERT INTO {self.result_table} (layer_id, {insert_columns})
                     SELECT '{layer_in.id}', {select_columns}, t.stats AS total_stats
                     FROM {aggregation_layer_project.table_name}
                     LEFT JOIN {self.table_name_total_stats} t
                     ON {aggregation_layer_project.table_name}.id = t.id
                     WHERE {aggregation_layer_project.where_query}
-                """
+                """)
         else:
             # Get average edge length of h3 grid
             avg_edge_length = await self.async_session.execute(
-                f"SELECT h3_get_hexagon_edge_length_avg({params.h3_resolution}, 'm')"
+                text(f"SELECT h3_get_hexagon_edge_length_avg({params.h3_resolution}, 'm')")
             )
             avg_edge_length = avg_edge_length.scalars().first()
 
@@ -494,7 +494,7 @@ class CRUDAggregatePolygon(CRUDAggregateBase):
                 f"{group_by_columns_subquery}, " if group_by_columns_subquery else ""
             )
 
-            sql_query_pre_grouped = f"""
+            sql_query_pre_grouped = text(f"""
                 CREATE TABLE {self.table_name_pre_grouped} AS
                 SELECT h3_target, {group_column_name_with_comma}
                 (ARRAY_AGG({statistics_val}))[1] {first_statistic_column_query} AS val
@@ -520,27 +520,27 @@ class CRUDAggregatePolygon(CRUDAggregateBase):
                 ) j ON TRUE
                 WHERE ST_Intersects(j.geom, p.geom)
                 GROUP BY h3_target, {group_by_columns_subquery_with_comma} p.id;
-            """
+            """)
             await self.async_session.execute(sql_query_pre_grouped)
             await self.async_session.execute(
-                f"CREATE INDEX ON {self.table_name_pre_grouped} (h3_target);"
+                text(f"CREATE INDEX ON {self.table_name_pre_grouped} (h3_target);")
             )
 
             # Compute total stats
-            sql_query_total_stats = f"""
+            sql_query_total_stats = text(f"""
                 CREATE TABLE {self.table_name_total_stats} AS
                 SELECT h3_target::text, ROUND({statistics_sql}::numeric, 6) AS stats
                 FROM {self.table_name_pre_grouped}
                 GROUP BY h3_target;
-            """
+            """)
             await self.async_session.execute(sql_query_total_stats)
             await self.async_session.execute(
-                f"CREATE INDEX ON {self.table_name_total_stats} (h3_target);"
+                text(f"CREATE INDEX ON {self.table_name_total_stats} (h3_target);")
             )
 
             if params.source_group_by_field:
                 # Compute grouped stats
-                sql_query_group_stats = f"""
+                sql_query_group_stats = text(f"""
                     CREATE TABLE {self.table_name_grouped_stats} AS
                     SELECT h3_target, JSONB_OBJECT_AGG(group_column_name, stats) AS stats
                     FROM
@@ -550,26 +550,26 @@ class CRUDAggregatePolygon(CRUDAggregateBase):
                         GROUP BY h3_target, group_column_name
                     ) AS to_group
                     GROUP BY h3_target;
-                """
-                await self.async_session.execute(text(sql_query_group_stats))
+                """)
+                await self.async_session.execute(sql_query_group_stats)
                 await self.async_session.execute(
-                    f"CREATE INDEX ON {self.table_name_grouped_stats} (h3_target);"
+                    text(f"CREATE INDEX ON {self.table_name_grouped_stats} (h3_target);")
                 )
 
-                sql_query_combine = f"""
+                sql_query_combine = text(f"""
                     INSERT INTO {self.result_table} (layer_id, {insert_columns})
                     SELECT '{layer_in.id}', ST_SETSRID(h3_cell_to_boundary(t.h3_target::h3index)::geometry, 4326),
                     t.h3_target, t.stats as total_stats, g.stats AS grouped_stats
                     FROM {self.table_name_grouped_stats} g, {self.table_name_total_stats} t
                     WHERE g.h3_target = t.h3_target;
-                """
+                """)
             else:
-                sql_query_combine = f"""
+                sql_query_combine = text(f"""
                     INSERT INTO {self.result_table} (layer_id, {insert_columns})
                     SELECT '{layer_in.id}', ST_SETSRID(h3_cell_to_boundary(h3_target::h3index)::geometry, 4326),
                     h3_target, stats AS total_stats
                     FROM {self.table_name_total_stats}
-                """
+                """)
 
         # Execute combined query
         await self.async_session.execute(sql_query_combine)
@@ -689,7 +689,7 @@ class CRUDOriginDestination(CRUDToolBase):
             layer_project=geometry_layer_project,
         )
         await self.async_session.execute(
-            f"CREATE INDEX ON {temp_geometry_layer} ({mapped_unique_id_column});"
+            text(f"CREATE INDEX ON {temp_geometry_layer} ({mapped_unique_id_column});")
         )
         await self.async_session.commit()
 
@@ -698,7 +698,7 @@ class CRUDOriginDestination(CRUDToolBase):
             layer_project=origin_destination_matrix_layer_project,
         )
         await self.async_session.execute(
-            f"CREATE INDEX ON {temp_origin_destination_matrix_layer} ({mapped_origin_column}, {mapped_destination_column});"
+            text(f"CREATE INDEX ON {temp_origin_destination_matrix_layer} ({mapped_origin_column}, {mapped_destination_column});")
         )
         await self.async_session.commit()
 
@@ -708,7 +708,7 @@ class CRUDOriginDestination(CRUDToolBase):
             for attr in list(result_layer_relation.attribute_mapping.keys())
         ]
         select_columns = ", ".join(select_columns)
-        sql_query_relations = f"""
+        sql_query_relations = text(f"""
             INSERT INTO {self.result_table_relation} (layer_id, geom, {', '.join(list(result_layer_relation.attribute_mapping.keys()))})
             SELECT '{result_layer_relation.id}',
             ST_MakeLine(ST_CENTROID((ARRAY_AGG(origin.geom ORDER BY ST_Area(origin.geom) DESC))[1]), ST_CENTROID((ARRAY_AGG(destination.geom ORDER BY ST_Area(destination.geom) DESC))[1])),
@@ -719,11 +719,11 @@ class CRUDOriginDestination(CRUDToolBase):
             WHERE origin.{mapped_unique_id_column}::text = matrix.{mapped_origin_column}::text
             AND destination.{mapped_unique_id_column}::text = matrix.{mapped_destination_column}::text
             GROUP BY matrix.{mapped_origin_column}, matrix.{mapped_destination_column}
-        """
+        """)
         await self.async_session.execute(sql_query_relations)
 
         # Compute points
-        sql_query_points = f"""
+        sql_query_points = text(f"""
             INSERT INTO {self.result_table_point} (layer_id, geom, {', '.join(list(result_layer_point.attribute_mapping.keys()))})
             WITH grouped AS
             (
@@ -736,7 +736,7 @@ class CRUDOriginDestination(CRUDToolBase):
             FROM {temp_geometry_layer} g, grouped gg
             WHERE g.{mapped_unique_id_column}::text = gg.{mapped_unique_id_column}::text
             GROUP BY g.text_attr2, gg.weight;
-        """
+        """)
         await self.async_session.execute(sql_query_points)
 
         # Create new layer

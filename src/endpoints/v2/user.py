@@ -32,7 +32,7 @@ async def create_user_base_data(
         folder = Folder(name="home", user_id=user_id)
         await crud_folder.create(
             async_session,
-            obj_in=folder,
+            obj_in=folder.model_dump(),
         )
     except Exception as e:
         await crud_user.delete_user_data_tables(async_session, user_id)

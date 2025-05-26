@@ -449,11 +449,11 @@ class PrintMap:
 
         # Read four rows of the table and create a DataFrame
         data = await self.async_session.execute(
-            f"""
+            text(f"""
             SELECT {', '.join(columns[:4])}
             FROM {layer.table_name}
             LIMIT 4
-            """
+            """)
         )
         data = data.all()
         # Add an empty row at end of each row

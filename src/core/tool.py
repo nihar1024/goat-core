@@ -5,6 +5,7 @@ from fastapi import BackgroundTasks
 from fastapi_pagination import Params as PaginationParams
 from httpx import AsyncClient
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import SQLModel
 
@@ -197,10 +198,10 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
                 "aggregation_layer_project_id": aggregation_layer_project,
             }
 
-    async def get_layers_project(self, params: IToolParam):
+    async def get_layers_project(self, params: BaseModel):
         # Get all params that have the name layer_project_id and build a dict using the variable name as key
         layer_project_ids = {}
-        for key, value in params.dict().items():
+        for key, value in params.model_dump().items():
             if isinstance(value, dict):
                 for sub_key, sub_value in value.items():
                     if sub_key.endswith("layer_project_id") and sub_value is not None:
@@ -259,7 +260,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
     async def create_feature_layer_tool(
         self,
         layer_in: IFeatureLayerToolCreate,
-        params: IToolParam,
+        params: BaseModel,
     ):
         # Get project to put the new layer in the same folder as the project
         project = await crud_project.get(self.async_session, id=self.project_id)
@@ -301,7 +302,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
         # Create layer
         layer = await crud_layer.create(
             db=self.async_session,
-            obj_in=layer,
+            obj_in=dict(layer),
         )
         await crud_layer.label_cluster_keep(
             async_session=self.async_session,
@@ -456,10 +457,10 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
             )
 
         # Call SQL function
-        sql_query = """
+        sql_query = text("""
             SELECT *
             FROM basic.area_statistics(:operation, :table_name, :where_query)
-        """
+        """)
         res = await self.async_session.execute(
             sql_query,
             {
@@ -485,7 +486,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
         where_query = build_where_clause([layer_project.where_query])
         geofence_table = GeofenceTable[tool_type.value].value
         # Check if layer has polygon geoms
-        sql = f"""
+        sql = text(f"""
             WITH to_test AS
             (
                 SELECT *
@@ -499,7 +500,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
                 FROM {geofence_table} AS g
                 WHERE ST_WITHIN(t.geom, g.geom)
             )
-        """
+        """)
         # Execute query
         cnt_not_within = await self.async_session.execute(sql)
         cnt_not_within = cnt_not_within.scalar()
@@ -582,7 +583,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
         )
 
         await self.async_session.execute(
-            f"""SELECT basic.create_distributed_polygon_table(
+            text(f"""SELECT basic.create_distributed_polygon_table(
                 '{layer_project.table_name}',
                 {layer_project.id},
                 '{arr_columns}',
@@ -591,7 +592,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
                 '{where_query_polygon}',
                 30,
                 '{temp_polygons}'
-            )"""
+            )""")
         )
         # Commit changes
         await self.async_session.commit()
@@ -614,7 +615,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
         )
 
         await self.async_session.execute(
-            f"""SELECT basic.create_distributed_line_table(
+            text(f"""SELECT basic.create_distributed_line_table(
                 '{layer_project.table_name}',
                 {layer_project.id},
                 '{arr_columns}',
@@ -622,7 +623,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
                 {format_value_null_sql(scenario_id)},
                 '{where_query_line}',
                 '{temp_lines}'
-            )"""
+            )""")
         )
         # Commit changes
         await self.async_session.commit()
@@ -645,7 +646,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
         )
 
         await self.async_session.execute(
-            f"""SELECT basic.create_distributed_point_table(
+            text(f"""SELECT basic.create_distributed_point_table(
                 '{layer_project.table_name}',
                 {layer_project.id},
                 '{arr_columns}',
@@ -653,7 +654,7 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
                 {format_value_null_sql(scenario_id)},
                 '{where_query_point}',
                 '{temp_points}'
-            )"""
+            )""")
         )
         # Commit changes
         await self.async_session.commit()
@@ -664,12 +665,12 @@ class CRUDToolBase(StatisticsBase, CRUDFailedJob):
 
         temp_geometry_layer = await self.create_temp_table_name("layer")
         where_query = "WHERE " + layer_project.where_query
-        sql_temp_geometry_layer = f"""
+        sql_temp_geometry_layer = text(f"""
             CREATE TABLE {temp_geometry_layer} AS
             SELECT *
             FROM {layer_project.table_name}
             {where_query}
-        """
+        """)
         await self.async_session.execute(sql_temp_geometry_layer)
         await self.async_session.commit()
         return temp_geometry_layer

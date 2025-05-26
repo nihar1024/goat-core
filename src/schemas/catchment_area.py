@@ -2,7 +2,7 @@ from enum import Enum
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 
 from src.schemas.colors import ColorRangeType
 from src.schemas.layer import ToolType
@@ -125,13 +125,13 @@ class CatchmentAreaTravelTimeCostActiveMobility(BaseModel):
     )
 
     # Ensure the number of steps doesn't exceed the maximum traveltime
-    @validator("steps", pre=True, always=True)
-    def valid_num_steps(cls, v):
-        if v > 45:
+    @field_validator("steps", mode="after", check_fields=True)
+    def valid_num_steps(cls, value: int):
+        if value > 45:
             raise ValueError(
-                "The number of steps must not exceed the maximum traveltime."
+                "The number of steps must not exceed the maximum potential traveltime."
             )
-        return v
+        return value
 
 
 # TODO: Check how to treat miles
@@ -152,13 +152,13 @@ class CatchmentAreaTravelDistanceCostActiveMobility(BaseModel):
     )
 
     # Ensure the number of steps doesn't exceed the maximum distance
-    @validator("steps", pre=True, always=True)
-    def valid_num_steps(cls, v):
-        if v > 20000:
+    @field_validator("steps", mode="after", check_fields=True)
+    def valid_num_steps(cls, value: int):
+        if value > 20000:
             raise ValueError(
-                "The number of steps must not exceed the maximum distance."
+                "The number of steps must not exceed the maximum potential distance."
             )
-        return v
+        return value
 
 
 class CatchmentAreaTravelTimeCostMotorizedMobility(BaseModel):
@@ -196,13 +196,13 @@ class CatchmentAreaTravelDistanceCostMotorizedMobility(BaseModel):
     )
 
     # Ensure the number of steps doesn't exceed the maximum distance
-    @validator("steps", pre=True, always=True)
-    def valid_num_steps(cls, v):
-        if v > 20000:
+    @field_validator("steps", mode="after", check_fields=True)
+    def valid_num_steps(cls, value: int):
+        if value > 20000:
             raise ValueError(
                 "The number of steps must not exceed the maximum distance."
             )
-        return v
+        return value
 
 
 """Catchment area decay function schemas."""
@@ -217,12 +217,17 @@ class CatchmentAreaDecayFunctionTypePT(str, Enum):
 
 class CatchmentAreaDecayFunctionPT(BaseModel):
     type: Optional[CatchmentAreaDecayFunctionTypePT] = Field(
-        CatchmentAreaDecayFunctionTypePT.LOGISTIC, description="Decay function type"
+        default=CatchmentAreaDecayFunctionTypePT.LOGISTIC,
+        description="Decay function type",
     )
     standard_deviation_minutes: Optional[int] = Field(
-        12, description="Standard deviation in minutes"
+        default=12,
+        description="Standard deviation in minutes",
     )
-    width_minutes: Optional[int] = Field(10, description="Width in minutes")
+    width_minutes: Optional[int] = Field(
+        default=10,
+        description="Width in minutes",
+    )
 
 
 """Catchment area type schemas."""
@@ -257,7 +262,7 @@ class CatchmentAreaStreetNetwork(BaseModel):
         title="Edge Layer Project ID",
         description="The layer project ID of the street network edge layer.",
     )
-    node_layer_project_id: int = Field(
+    node_layer_project_id: int | None = Field(
         None,
         title="Node Layer Project ID",
         description="The layer project ID of the street network node layer.",
@@ -310,30 +315,30 @@ class ICatchmentAreaActiveMobility(BaseModel):
     )
 
     # Check that polygon difference exists if catchment area type is polygon
-    @validator("polygon_difference", pre=True, always=True)
-    def check_polygon_difference(cls, v, values):
+    @field_validator("polygon_difference", mode="after", check_fields=True)
+    def check_polygon_difference(cls, value: bool | None, info: ValidationInfo):
         if (
-            values["catchment_area_type"]
+            info.data["catchment_area_type"]
             == CatchmentAreaTypeActiveMobility.polygon.value
-            and v is None
+            and value is None
         ):
             raise ValueError(
                 "The polygon difference must be set if the catchment area type is polygon."
             )
-        return v
+        return value
 
     # Check that polygon difference is not specified if catchment area type is not polygon
-    @validator("polygon_difference", pre=True, always=True)
-    def check_polygon_difference_not_specified(cls, v, values):
+    @field_validator("polygon_difference", mode="after", check_fields=True)
+    def check_polygon_difference_not_specified(cls, value: bool | None, info: ValidationInfo):
         if (
-            values["catchment_area_type"]
+            info.data["catchment_area_type"]
             != CatchmentAreaTypeActiveMobility.polygon.value
-            and v is not None
+            and value is not None
         ):
             raise ValueError(
                 "The polygon difference must not be set if the catchment area type is not polygon."
             )
-        return v
+        return value
 
     @property
     def tool_type(self):
@@ -421,28 +426,28 @@ class ICatchmentAreaPT(BaseModel):
     monte_carlo_draws: int = 200
 
     # Check that polygon difference exists if catchment area type is polygon
-    @validator("polygon_difference", pre=True, always=True)
-    def check_polygon_difference(cls, v, values):
+    @field_validator("polygon_difference", mode="after", check_fields=True)
+    def check_polygon_difference(cls, value: bool | None, info: ValidationInfo):
         if (
-            values["catchment_area_type"] == CatchmentAreaTypePT.polygon.value
-            and v is None
+            info.data["catchment_area_type"] == CatchmentAreaTypePT.polygon.value
+            and value is None
         ):
             raise ValueError(
                 "The polygon difference must be set if the catchment area type is polygon."
             )
-        return v
+        return value
 
     # Check that polygon difference is not specified if catchment area type is not polygon
-    @validator("polygon_difference", pre=True, always=True)
-    def check_polygon_difference_not_specified(cls, v, values):
+    @field_validator("polygon_difference", mode="after", check_fields=True)
+    def check_polygon_difference_not_specified(cls, value: bool | None, info: ValidationInfo):
         if (
-            values["catchment_area_type"] != CatchmentAreaTypePT.polygon.value
-            and v is not None
+            info.data["catchment_area_type"] != CatchmentAreaTypePT.polygon.value
+            and value is not None
         ):
             raise ValueError(
                 "The polygon difference must not be set if the catchment area type is not polygon."
             )
-        return v
+        return value
 
     @property
     def tool_type(self):
@@ -511,28 +516,28 @@ class ICatchmentAreaCar(BaseModel):
     )
 
     # Check that polygon difference exists if catchment area type is polygon
-    @validator("polygon_difference", pre=True, always=True)
-    def check_polygon_difference(cls, v, values):
+    @field_validator("polygon_difference", mode="after", check_fields=True)
+    def check_polygon_difference(cls, value: bool | None, info: ValidationInfo):
         if (
-            values["catchment_area_type"] == CatchmentAreaTypeCar.polygon.value
-            and v is None
+            info.data["catchment_area_type"] == CatchmentAreaTypeCar.polygon.value
+            and value is None
         ):
             raise ValueError(
                 "The polygon difference must be set if the catchment area type is polygon."
             )
-        return v
+        return value
 
     # Check that polygon difference is not specified if catchment area type is not polygon
-    @validator("polygon_difference", pre=True, always=True)
-    def check_polygon_difference_not_specified(cls, v, values):
+    @field_validator("polygon_difference", mode="after", check_fields=True)
+    def check_polygon_difference_not_specified(cls, value: bool | None, info: ValidationInfo):
         if (
-            values["catchment_area_type"] != CatchmentAreaTypeCar.polygon.value
-            and v is not None
+            info.data["catchment_area_type"] != CatchmentAreaTypeCar.polygon.value
+            and value is not None
         ):
             raise ValueError(
                 "The polygon difference must not be set if the catchment area type is not polygon."
             )
-        return v
+        return value
 
     @property
     def tool_type(self):
@@ -607,30 +612,30 @@ class CatchmentAreaNearbyStationAccess(BaseModel):
     )
 
     # Check that polygon difference exists if catchment area type is polygon
-    @validator("polygon_difference", pre=True, always=True)
-    def check_polygon_difference(cls, v, values):
+    @field_validator("polygon_difference", mode="after", check_fields=True)
+    def check_polygon_difference(cls, value: bool | None, info: ValidationInfo):
         if (
-            values["catchment_area_type"]
+            info.data["catchment_area_type"]
             == CatchmentAreaTypeActiveMobility.polygon.value
-            and v is None
+            and value is None
         ):
             raise ValueError(
                 "The polygon difference must be set if the catchment area type is polygon."
             )
-        return v
+        return value
 
     # Check that polygon difference is not specified if catchment area type is not polygon
-    @validator("polygon_difference", pre=True, always=True)
-    def check_polygon_difference_not_specified(cls, v, values):
+    @field_validator("polygon_difference", mode="after", check_fields=True)
+    def check_polygon_difference_not_specified(cls, value: bool | None, info: ValidationInfo):
         if (
-            values["catchment_area_type"]
+            info.data["catchment_area_type"]
             != CatchmentAreaTypeActiveMobility.polygon.value
-            and v is not None
+            and value is not None
         ):
             raise ValueError(
                 "The polygon difference must not be set if the catchment area type is not polygon."
             )
-        return v
+        return value
 
     @property
     def tool_type(self):

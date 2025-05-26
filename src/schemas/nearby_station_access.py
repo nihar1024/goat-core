@@ -1,7 +1,7 @@
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from src.schemas.catchment_area import (
     CatchmentAreaRoutingModeActiveMobility,
@@ -73,11 +73,11 @@ class INearbyStationAccess(BaseModel):
     )
 
     # Ensure at least one mode is selected
-    @validator("mode")
-    def check_mode(cls, v):
-        if not v or len(v) == 0:
+    @field_validator("mode", mode="after")
+    def check_mode(cls, value: List[CatchmentAreaRoutingModePT]):
+        if not value or len(value) == 0:
             raise ValueError("At least one mode must be selected.")
-        return v
+        return value
 
     @property
     def tool_type(self):

@@ -7,16 +7,14 @@ from sqlalchemy import delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import RelationshipProperty, selectinload
+from sqlalchemy.sql import Select
 from sqlmodel import SQLModel
-from sqlmodel.sql.expression import Select
 
-from src.db.models._base_class import Base
 from src.schemas import OrderEnum
 
-ModelType = TypeVar("ModelType", bound=Base)
+ModelType = TypeVar("ModelType", bound=BaseModel)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
-T = TypeVar("T", bound=SQLModel)
 
 
 class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
@@ -84,7 +82,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         self,
         db: AsyncSession,
         *,
-        query: T | Select[T] | None = None,
+        query: SQLModel | Select | None = None,
         page_params: Params | None = None,
         order_by: str | None = None,
         order: OrderEnum | None = OrderEnum.ascendent,
@@ -117,11 +115,12 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             items = result.all()
             return items
         else:
+            assert type(query) == Select
             result = await paginate(db, query, page_params)
             return result
 
     async def create(self, db: AsyncSession, *, obj_in: CreateSchemaType) -> ModelType:
-        db_obj = self.model.from_orm(obj_in)
+        db_obj = self.model.model_validate(obj_in)
         db.add(db_obj)
         await db.commit()
         await db.refresh(db_obj)
@@ -156,10 +155,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await db.refresh(db_obj)
 
         # Create a new object from the updated object to validate it in case the layer has validators.
-        if list(self.model.__get_validators__()) != []:
+        if hasattr(self.model, '__pydantic_decorators__') and self.model.__pydantic_decorators__.validators:
             try:
-                validated_obj = self.model(**db_obj.dict())
-                for field in validated_obj.__fields__.keys():
+                validated_obj = self.model(**db_obj.model_dump())
+                for field in self.model.model_fields.keys():
                     setattr(db_obj, field, getattr(validated_obj, field))
             except ValidationError as e:
                 raise e

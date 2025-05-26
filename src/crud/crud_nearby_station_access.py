@@ -1,6 +1,8 @@
 import json
 from datetime import timedelta
 
+from sqlalchemy import text
+
 from src.core.config import settings
 from src.core.job import job_init, job_log, run_background_or_immediately
 from src.core.tool import CRUDToolBase
@@ -52,14 +54,14 @@ class CRUDNearbyStationAccess(CRUDToolBase):
         try:
             # Create result table to store catchment area geometry
             catchment_area_table = f"temporal.temp_{str(self.job_id).replace('-', '')}"
-            sql_create_temp_table = f"""
+            sql_create_temp_table = text(f"""
                 CREATE TABLE {catchment_area_table} (
                     id serial,
                     layer_id text,
                     geom geometry,
                     integer_attr1 smallint
                 );
-            """
+            """)
             await self.async_session.execute(sql_create_temp_table)
             await self.async_session.commit()
         except Exception as e:
@@ -109,7 +111,7 @@ class CRUDNearbyStationAccess(CRUDToolBase):
         )
 
         # Run query to find nearby stations, compute route frequencies and insert into result table
-        sql_compute_nearby_station_access = f"""
+        sql_compute_nearby_station_access = text(f"""
             WITH stop AS (
                 SELECT stop_id, stop_name, access_time, geom, h3_3, unpacked.KEY AS route_type, unpacked.value AS routes
                 FROM basic.station_route_count(
@@ -152,7 +154,7 @@ class CRUDNearbyStationAccess(CRUDToolBase):
                 LATERAL basic.identify_dominant_mode(route_types, '{json.dumps(flat_mode_mapping)}'::JSONB) dominant_mode
             ) x
             ORDER BY access_time
-        """
+        """)
         try:
             await self.async_session.execute(sql_compute_nearby_station_access)
             await self.async_session.commit()
@@ -163,7 +165,7 @@ class CRUDNearbyStationAccess(CRUDToolBase):
         try:
             # Delete temporary catchment area result table
             await self.async_session.execute(
-                f"DROP TABLE IF EXISTS {catchment_area_table};"
+                text(f"DROP TABLE IF EXISTS {catchment_area_table};")
             )
         except Exception as e:
             await self.async_session.rollback()

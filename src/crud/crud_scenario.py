@@ -35,7 +35,7 @@ class CRUDScenario(CRUDBase[Scenario, IScenarioCreate, IScenarioUpdate]):
             text(f"""SELECT * FROM {user_table} WHERE id = :id AND h3_3 = :h3_3"""),
             {"id": feature_id, "h3_3": h3_3},
         )
-        origin_feature_obj = origin_feature_result.fetchone()
+        origin_feature_obj = origin_feature_result.mappings().fetchone()
         return origin_feature_obj
 
     def _get_rev_attr_mapping(self, layer_project):
@@ -105,7 +105,7 @@ class CRUDScenario(CRUDBase[Scenario, IScenarioCreate, IScenarioUpdate]):
 
         scenario_features = []
         for feature in features:
-            scenario_feature = ScenarioFeature.from_orm(feature)
+            scenario_feature = ScenarioFeature.model_validate(feature)
             scenario_scenario_feature_link = ScenarioScenarioFeatureLink(
                 scenario=scenario, scenario_feature=scenario_feature
             )

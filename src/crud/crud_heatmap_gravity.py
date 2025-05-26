@@ -1,6 +1,8 @@
 from typing import List
 from uuid import UUID
 
+from sqlalchemy import text
+
 from src.core.config import settings
 from src.core.job import job_init, job_log, run_background_or_immediately
 from src.crud.crud_heatmap import CRUDHeatmapBase
@@ -89,7 +91,7 @@ class CRUDHeatmapGravity(CRUDHeatmapBase):
 
             # Create temporary distributed table from supplied opportunity layer
             await self.async_session.execute(
-                f"""SELECT basic.create_heatmap_gravity_opportunity_table(
+                text(f"""SELECT basic.create_heatmap_gravity_opportunity_table(
                     {layer["layer"].opportunity_layer_project_id},
                     '{layer["table_name"]}',
                     '{settings.CUSTOMER_SCHEMA}',
@@ -106,7 +108,7 @@ class CRUDHeatmapGravity(CRUDHeatmapBase):
                     {layer["geom_type"] == FeatureGeometryType.polygon},
                     {format_value_null_sql(temp_filler_cells)},
                     {append_to_existing}
-                )"""
+                )""")
             )
 
             await self.async_session.commit()
@@ -184,7 +186,7 @@ class CRUDHeatmapGravity(CRUDHeatmapBase):
                 GROUP BY h3_index
             """
 
-        query = f"""
+        query = text(f"""
             INSERT INTO {result_table} (layer_id, geom, text_attr1, float_attr1)
             SELECT
                 '{result_layer_id}',
@@ -195,7 +197,7 @@ class CRUDHeatmapGravity(CRUDHeatmapBase):
                 {query}
             ) result
             GROUP BY dest_id;
-        """
+        """)
 
         return query
 

@@ -12,8 +12,8 @@ from src.core.config import settings
 from src.crud.base import CRUDBase
 from src.db.models.job import Job
 from src.schemas.common import OrderEnum
-from src.schemas.job import JobStatusType, JobType, MsgType, job_mapping
 from src.schemas.error import ERROR_MAPPING, UnknownError
+from src.schemas.job import JobStatusType, JobType, MsgType, job_mapping
 from src.utils import sanitize_error_message
 
 
@@ -23,8 +23,8 @@ class CRUDJob(CRUDBase):
         async_session: AsyncSession,
         user_id: UUID,
         job_type: JobType,
-        project_id: UUID = None,
-        read: bool = None,
+        project_id: UUID | None = None,
+        read: bool | None = None,
     ):
         """Create a job."""
 
@@ -50,13 +50,13 @@ class CRUDJob(CRUDBase):
         if job_type not in job_mapping:
             job_status = {}
         else:
-            job_status = job_mapping[job_type.value]().dict()
+            job_status = job_mapping[job_type]().dict()
 
         job = Job(
             user_id=user_id,
-            type=job_type.value,
+            type=job_type,
             status=job_status,
-            status_simple=JobStatusType.pending.value,
+            status_simple=JobStatusType.pending,
         )
         if project_id:
             job.project_id = project_id
@@ -64,7 +64,7 @@ class CRUDJob(CRUDBase):
             job.read = read
 
         # Create job
-        job = await self.create(db=async_session, obj_in=job)
+        job = await self.create(db=async_session, obj_in=dict(job))
         return job
 
     async def update_status(
@@ -83,6 +83,7 @@ class CRUDJob(CRUDBase):
         job = await self.get(db=async_session, id=job_id)
         async_session.expire(job)
         job = await self.get(db=async_session, id=job_id)
+        assert job is not None
 
         # Update job step
         job.status[job_step_name]["timestamp_end"] = str(datetime.now())
@@ -185,11 +186,6 @@ class CRUDJob(CRUDBase):
         )
         jobs = await self.get_multi(async_session, query=query_get)
         jobs = [job[0] for job in jobs]
-        if jobs == []:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Jobs not found.",
-            )
 
         # Create dict of len jobs with read=True.
         jobs_update = [{"read": True} for job in jobs]
