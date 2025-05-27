@@ -95,6 +95,7 @@ cffi = "1.15.1"
 sentry-sdk = {extras = ["fastapi"], version = "^2.14.0"}
 numpy = "^2.2.4"
 pydantic-settings = "^2.8.1"
+psycopg = "^3.2.9"
 [tool.poetry.group.dev.dependencies]
 sqlalchemy-stubs = "^0.3"
 debugpy = "^1.4.1"
